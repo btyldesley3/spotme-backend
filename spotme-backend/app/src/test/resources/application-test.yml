@@ -1,0 +1,7 @@
+spring:
+  flyway:
+    enabled: true
+
+grpc:
+  server:
+    port: 0   # random port so tests don't clash with dev server

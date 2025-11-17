@@ -1,0 +1,13 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.actuate.autoconfigure.endpoint.web.WebEndpointAutoConfiguration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info        # keep it simple first
+grpc:
+  server:
+    port: 9090

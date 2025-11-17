@@ -1,0 +1,10 @@
+{
+  "progression_logic": {
+    "micro_loading_policy": {
+      "barbell_upper": { "min_inc": 2.5 }
+    }
+  },
+  "recovery": {
+    "doms": { "severe_threshold": 7 }
+  }
+}

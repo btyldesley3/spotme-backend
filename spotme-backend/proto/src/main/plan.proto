@@ -1,0 +1,28 @@
+syntax = "proto3";
+package spotme.plan.v1;
+option java_multiple_files = true;
+option java_package = "com.spotme.proto.plan.v1";
+option java_outer_classname = "PlanProto";
+
+message RecommendRequest {
+  string user_id = 1;
+  string exercise_id = 2;
+  string rules_version = 3;   // e.g. "v1.0.0"
+  string modality_key = 4;    // e.g. "barbell_upper"
+}
+
+message SetPrescription {
+  string exercise_id = 1;
+  int32 order = 2;
+  int32 prescribed_reps = 3;
+  double prescribed_weight_kg = 4;
+  bool is_backoff = 5;
+}
+
+message RecommendResponse {
+  repeated SetPrescription sets = 1;
+}
+
+service PlanService {
+  rpc Recommend(RecommendRequest) returns (RecommendResponse);
+}
