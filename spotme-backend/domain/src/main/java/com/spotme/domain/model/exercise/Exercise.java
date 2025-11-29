@@ -1,7 +1,7 @@
 package com.spotme.domain.model.exercise;
 
 public record Exercise(
-        ExerciseId id, String name, Modality modality) extends com.spotme.domain.model.program.exercise.Exercise {
+        ExerciseId id, String name, Modality modality) {
     public enum Modality { BARBELL, DUMBBELL, MACHINE, CABLE, BODYWEIGHT}
 
     public Exercise {
