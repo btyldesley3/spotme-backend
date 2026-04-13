@@ -9,6 +9,9 @@ option java_multiple_files = true;
 // The Plan service definition.
 service PlanService {
   rpc Recommend (RecommendRequest) returns (RecommendResponse);
+  rpc CompleteWorkoutSession (CompleteWorkoutSessionRequest) returns (CompleteWorkoutSessionResponse);
+  rpc GetLatestWorkoutSession (GetLatestWorkoutSessionRequest) returns (WorkoutSessionResponse);
+  rpc ListRecentWorkoutSessions (ListRecentWorkoutSessionsRequest) returns (ListWorkoutSessionsResponse);
 }
 
 // Request for workout recommendation
@@ -32,3 +35,54 @@ message SetPrescription {
 message RecommendResponse {
   repeated SetPrescription sets = 1;
 }
+
+message CompleteWorkoutSessionRequest {
+  string user_id = 1;
+  string session_id = 2;
+  string finished_at = 3; // ISO-8601 instant string
+  int32 min_total_sets = 4;
+  int32 min_distinct_exercises = 5;
+  int32 min_sets_per_exercise = 6;
+  bool require_recovery_feedback_for_progression = 7;
+  optional int32 doms = 8;
+  optional int32 sleep_quality = 9;
+}
+
+message CompleteWorkoutSessionResponse {
+  string session_id = 1;
+  bool completed = 2;
+  bool allows_progression = 3;
+  string completion_reason = 4;
+  int32 total_exercises = 5;
+  int32 total_sets = 6;
+  int32 total_reps = 7;
+  double total_volume_kg = 8;
+}
+
+message GetLatestWorkoutSessionRequest {
+  string user_id = 1;
+}
+
+message ListRecentWorkoutSessionsRequest {
+  string user_id = 1;
+  int32 limit = 2;
+}
+
+message WorkoutSessionResponse {
+  string session_id = 1;
+  string user_id = 2;
+  string started_at = 3;
+  optional string finished_at = 4;
+  int32 total_exercises = 5;
+  int32 total_sets = 6;
+  int32 total_reps = 7;
+  double total_volume_kg = 8;
+  bool completed = 9;
+  bool allows_progression = 10;
+  string completion_reason = 11;
+}
+
+message ListWorkoutSessionsResponse {
+  repeated WorkoutSessionResponse sessions = 1;
+}
+

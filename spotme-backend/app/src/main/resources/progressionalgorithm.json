@@ -45,6 +45,23 @@
     "max_weekly_load_increase_pct": 5.0,
     "e1rm_calc": { "method": "rpe_table", "table": "tskar_rpe_estimator_v1" }
   },
+  "recovery": {
+    "doms": {
+      "severe_threshold": 7,
+      "moderate_threshold": 4
+    },
+    "sleep": {
+      "poor_threshold": 4
+    },
+    "weighting": {
+      "doms_impact": 0.5,
+      "rpe_influence": 0.3,
+      "sleep_influence": 0.2
+    },
+    "safety": {
+      "min_load_reduction_pct": 2.5
+    }
+  },
   "recovery_gate": {
     "rules": [
       {
@@ -80,6 +97,12 @@
     ]
   },
   "progression_logic": {
+    "rpe_thresholds": {
+      "low": 7.0,
+      "optimal_min": 8.0,
+      "optimal_max": 9.0,
+      "high": 9.5
+    },
     "rules": [
       {
         "when": {
