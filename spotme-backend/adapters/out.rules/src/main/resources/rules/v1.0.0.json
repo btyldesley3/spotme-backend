@@ -1,10 +1,45 @@
 {
-  "progression_logic": {
-    "micro_loading_policy": {
-      "barbell_upper": { "min_inc": 2.5 }
+  "version": "v1.0.0",
+  "recovery": {
+    "doms": {
+      "severe_threshold": 7,
+      "moderate_threshold": 4
+    },
+    "sleep": {
+      "poor_threshold": 4
+    },
+    "weighting": {
+      "doms_impact": 0.5,
+      "rpe_influence": 0.3,
+      "sleep_influence": 0.2
+    },
+    "safety": {
+      "min_load_reduction_pct": 2.5
     }
   },
-  "recovery": {
-    "doms": { "severe_threshold": 7 }
+  "progression_logic": {
+    "rpe_thresholds": {
+      "low": 7.0,
+      "optimal_min": 8.0,
+      "optimal_max": 9.0,
+      "high": 9.5
+    },
+    "micro_loading_policy": {
+      "barbell_compound": {
+        "min_inc": 2.5
+      },
+      "barbell_upper": {
+        "min_inc": 1.25
+      },
+      "dumbbell": {
+        "min_inc": 1.25
+      },
+      "machine_compound": {
+        "min_inc": 2.5
+      },
+      "machine_isolation": {
+        "min_inc": 1.25
+      }
+    }
   }
 }

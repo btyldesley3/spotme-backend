@@ -4,16 +4,22 @@ import com.spotme.application.usecase.CompleteWorkoutSession;
 import com.spotme.application.usecase.ComputeNextPrescription;
 import com.spotme.application.usecase.GetLatestWorkoutSession;
 import com.spotme.application.usecase.ListRecentWorkoutSessions;
+import com.spotme.application.usecase.LogSet;
+import com.spotme.application.usecase.StartWorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionSummary;
 import com.spotme.proto.plan.v1.CompleteWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.CompleteWorkoutSessionResponse;
 import com.spotme.proto.plan.v1.GetLatestWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.ListRecentWorkoutSessionsRequest;
 import com.spotme.proto.plan.v1.ListWorkoutSessionsResponse;
+import com.spotme.proto.plan.v1.LogSetRequest;
+import com.spotme.proto.plan.v1.LogSetResponse;
 import com.spotme.proto.plan.v1.PlanServiceGrpc;
 import com.spotme.proto.plan.v1.RecommendRequest;
 import com.spotme.proto.plan.v1.RecommendResponse;
 import com.spotme.proto.plan.v1.SetPrescription;
+import com.spotme.proto.plan.v1.StartWorkoutSessionRequest;
+import com.spotme.proto.plan.v1.StartWorkoutSessionResponse;
 import com.spotme.proto.plan.v1.WorkoutSessionResponse;
 import io.grpc.Status;
 import net.devh.boot.grpc.server.service.GrpcService;
@@ -27,39 +33,96 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
     private final CompleteWorkoutSession completeWorkoutSession;
     private final GetLatestWorkoutSession getLatestWorkoutSession;
     private final ListRecentWorkoutSessions listRecentWorkoutSessions;
+    private final StartWorkoutSession startWorkoutSession;
+    private final LogSet logSet;
 
     public PlanGrpcService(ComputeNextPrescription useCase,
                            CompleteWorkoutSession completeWorkoutSession,
                            GetLatestWorkoutSession getLatestWorkoutSession,
-                           ListRecentWorkoutSessions listRecentWorkoutSessions) {
+                           ListRecentWorkoutSessions listRecentWorkoutSessions,
+                           StartWorkoutSession startWorkoutSession,
+                           LogSet logSet) {
         this.useCase = useCase;
         this.completeWorkoutSession = completeWorkoutSession;
         this.getLatestWorkoutSession = getLatestWorkoutSession;
         this.listRecentWorkoutSessions = listRecentWorkoutSessions;
+        this.startWorkoutSession = startWorkoutSession;
+        this.logSet = logSet;
+    }
+
+    @Override
+    public void startWorkoutSession(StartWorkoutSessionRequest request,
+                                    io.grpc.stub.StreamObserver<StartWorkoutSessionResponse> resp) {
+        try {
+            var result = startWorkoutSession.handle(new StartWorkoutSession.Command(
+                    request.getUserId(),
+                    request.getStartedAt().isBlank() ? null : request.getStartedAt()
+            ));
+            resp.onNext(StartWorkoutSessionResponse.newBuilder()
+                    .setSessionId(result.sessionId().toString())
+                    .setUserId(result.userId().toString())
+                    .setStartedAt(result.startedAt().toString())
+                    .build());
+            resp.onCompleted();
+        } catch (IllegalArgumentException e) {
+            resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    @Override
+    public void logSet(LogSetRequest request,
+                       io.grpc.stub.StreamObserver<LogSetResponse> resp) {
+        try {
+            var result = logSet.handle(new LogSet.Command(
+                    request.getUserId(),
+                    request.getSessionId(),
+                    request.getExerciseId(),
+                    request.getSetNumber(),
+                    request.getReps(),
+                    request.getWeightKg(),
+                    request.getRpe(),
+                    request.getNote()
+            ));
+            resp.onNext(LogSetResponse.newBuilder()
+                    .setSessionId(result.sessionId().toString())
+                    .setTotalSetsInSession(result.totalSetsInSession())
+                    .build());
+            resp.onCompleted();
+        } catch (NoSuchElementException e) {
+            resp.onError(Status.NOT_FOUND.withDescription("Workout session not found").asRuntimeException());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+        }
     }
 
     @Override
     public void recommend(RecommendRequest request,
                           io.grpc.stub.StreamObserver<RecommendResponse> resp) {
-        var comNextPres = useCase.handle(new ComputeNextPrescription.Command(
-                request.getUserId(),              // UUID string
-                request.getExerciseId(),         // UUID string
-                request.getRulesVersion().isBlank() ? "v1.0.0" : request.getRulesVersion(),
-                request.getModalityKey().isBlank() ? "barbell_upper" : request.getModalityKey()
-        ));
+        try {
+            var comNextPres = useCase.handle(new ComputeNextPrescription.Command(
+                    request.getUserId(),              // UUID string
+                    request.getExerciseId(),         // UUID string
+                    request.getRulesVersion().isBlank() ? "v1.0.0" : request.getRulesVersion(),
+                    request.getModalityKey().isBlank() ? "barbell_upper" : request.getModalityKey()
+            ));
 
-        var recResBuilder = RecommendResponse.newBuilder();
-        comNextPres.prescription().sets().forEach(s ->
-                recResBuilder.addSets(SetPrescription.newBuilder()
-                        .setExerciseId(s.exerciseId().toString())   // back to string
-                        .setOrder(s.order())
-                        .setPrescribedReps(s.prescribedReps())
-                        .setPrescribedWeightKg(s.prescribedWeightKg())
-                        .setIsBackoff(s.backoff())
-                        .build())
-        );
-        resp.onNext(recResBuilder.build());
-        resp.onCompleted();
+            var recResBuilder = RecommendResponse.newBuilder();
+            comNextPres.prescription().sets().forEach(s ->
+                    recResBuilder.addSets(SetPrescription.newBuilder()
+                            .setExerciseId(s.exerciseId().toString())   // back to string
+                            .setOrder(s.order())
+                            .setPrescribedReps(s.prescribedReps())
+                            .setPrescribedWeightKg(s.prescribedWeightKg())
+                            .setIsBackoff(s.backoff())
+                            .build())
+            );
+            resp.onNext(recResBuilder.build());
+            resp.onCompleted();
+        } catch (NoSuchElementException e) {
+            resp.onError(Status.NOT_FOUND.withDescription("Workout history not found").asRuntimeException());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+        }
     }
 
     @Override

@@ -1,3 +1,5 @@
+package com.spotme.adapters.out.rules;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.spotme.domain.port.RulesConfigPort;
@@ -9,7 +11,11 @@ import java.io.InputStream;
 @Component
 public class ClasspathRulesConfigAdapter implements RulesConfigPort {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper;
+
+    public ClasspathRulesConfigAdapter(ObjectMapper mapper) {
+        this.mapper = mapper;
+    }
 
     @Override
     public JsonNode loadRules(String version) {
@@ -24,3 +30,4 @@ public class ClasspathRulesConfigAdapter implements RulesConfigPort {
         }
     }
 }
+
