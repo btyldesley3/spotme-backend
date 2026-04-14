@@ -1,0 +1,178 @@
+{
+  "info": {
+    "_postman_id": "spotme-api-collection",
+    "name": "SpotMe API - Local Docker",
+    "description": "SpotMe REST API endpoints for testing with Docker Compose\n\nBase URL: http://localhost:8080/api/v1\n\nStart containers with:\n  docker compose up --build",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Workout Sessions",
+      "item": [
+        {
+          "name": "1. Start Workout Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"11111111-1111-1111-1111-111111111111\",\n  \"startedAt\": \"2026-04-14T18:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/v1/workout-sessions/start",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "v1", "workout-sessions", "start"]
+            },
+            "description": "Start a new workout session.\n\nReturns: sessionId (copy this for the next request)"
+          },
+          "response": []
+        },
+        {
+          "name": "2. Log a Set",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"11111111-1111-1111-1111-111111111111\",\n  \"exerciseId\": \"22222222-2222-2222-2222-222222222222\",\n  \"setNumber\": 1,\n  \"reps\": 8,\n  \"weightKg\": 60.0,\n  \"rpe\": 8.0,\n  \"note\": \"top set\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/v1/workout-sessions/{{sessionId}}/sets",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "v1", "workout-sessions", "{{sessionId}}", "sets"]
+            },
+            "description": "Log a set for an exercise in the current session.\n\nReplace {{sessionId}} with the sessionId from the 'Start Workout Session' response.\n\nRequired fields:\n- userId: user UUID\n- exerciseId: exercise UUID\n- setNumber: positive integer\n- reps: positive integer\n- weightKg: positive number\n- rpe: 0-10 (rate of perceived exertion)\n- note: optional string"
+          },
+          "response": []
+        },
+        {
+          "name": "3. Complete Workout Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"11111111-1111-1111-1111-111111111111\",\n  \"finishedAt\": \"2026-04-14T18:45:00Z\",\n  \"minTotalSets\": 1,\n  \"minDistinctExercises\": 1,\n  \"minSetsPerExercise\": 1,\n  \"requireRecoveryFeedbackForProgression\": true,\n  \"doms\": 3,\n  \"sleepQuality\": 7\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/v1/workout-sessions/{{sessionId}}/complete",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "v1", "workout-sessions", "{{sessionId}}", "complete"]
+            },
+            "description": "Complete a workout session and optionally provide recovery feedback.\n\nReplace {{sessionId}} with the sessionId from the 'Start Workout Session' response.\n\nRequired fields:\n- userId: user UUID\n- finishedAt: ISO 8601 timestamp\n- minTotalSets: positive integer (minimum sets to consider session valid)\n- minDistinctExercises: positive integer\n- minSetsPerExercise: positive integer\n- requireRecoveryFeedbackForProgression: boolean\n\nOptional feedback fields:\n- doms: soreness level (1-10, where 10 is severe)\n- sleepQuality: sleep rating (1-10)"
+          },
+          "response": []
+        },
+        {
+          "name": "4. Get Latest Workout Session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/v1/workout-sessions/latest?userId=11111111-1111-1111-1111-111111111111",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "v1", "workout-sessions", "latest"],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "11111111-1111-1111-1111-111111111111"
+                }
+              ]
+            },
+            "description": "Retrieve the most recent workout session for a user."
+          },
+          "response": []
+        },
+        {
+          "name": "5. List Recent Workout Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/v1/workout-sessions/recent?userId=11111111-1111-1111-1111-111111111111&limit=10",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "v1", "workout-sessions", "recent"],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "11111111-1111-1111-1111-111111111111"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Number of sessions to retrieve (default: 10)"
+                }
+              ]
+            },
+            "description": "Retrieve recent workout sessions for a user, with optional limit."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Recommendations",
+      "item": [
+        {
+          "name": "Get Exercise Recommendation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"11111111-1111-1111-1111-111111111111\",\n  \"exerciseId\": \"22222222-2222-2222-2222-222222222222\",\n  \"rulesVersion\": \"v1.0.0\",\n  \"modalityKey\": \"barbell_upper\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/v1/recommendations",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "v1", "recommendations"]
+            },
+            "description": "Get progression recommendation for an exercise based on the progression engine.\n\nThe engine analyzes:\n- User's workout history\n- DOMS (delayed onset muscle soreness)\n- Sleep quality\n- Last performance metrics (weight, reps)\n\nReturns prescribed sets with weight, reps, and progression info."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string",
+      "description": "Copy the sessionId from the 'Start Workout Session' response here"
+    }
+  ]
+}
+

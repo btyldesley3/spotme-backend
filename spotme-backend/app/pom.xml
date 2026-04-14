@@ -38,6 +38,11 @@
         </dependency>
         <dependency>
             <groupId>com.spotme</groupId>
+            <artifactId>in.rest</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.spotme</groupId>
             <artifactId>out.persistence</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -144,6 +149,16 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.spotme.SpotMeApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -17,7 +17,7 @@
         <module>application</module>
         <module>proto</module>
         <module>adapters/in.grpc</module>
-        <!-- <module>adapters/in.rest</module> -->
+        <module>adapters/in.rest</module>
         <module>adapters/out.persistence</module>
         <module>adapters/out.rules</module>
         <module>adapters/out.cache</module>
@@ -80,7 +80,7 @@
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring.boot.version}</version>
                     <configuration>
-                        <mainClass>com.spotme.app.SpotMeApplication</mainClass>
+                        <mainClass>com.spotme.SpotMeApplication</mainClass>
                     </configuration>
                 </plugin>
             </plugins>
