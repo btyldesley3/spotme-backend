@@ -2,9 +2,11 @@ package com.spotme.adapters.in.grpc;
 
 import com.spotme.application.usecase.CompleteWorkoutSession;
 import com.spotme.application.usecase.ComputeNextPrescription;
+import com.spotme.application.usecase.GetUserProfile;
 import com.spotme.application.usecase.GetLatestWorkoutSession;
 import com.spotme.application.usecase.ListRecentWorkoutSessions;
 import com.spotme.application.usecase.LogSet;
+import com.spotme.application.usecase.RegisterUser;
 import com.spotme.application.usecase.StartWorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionSummary;
 import com.spotme.proto.plan.v1.CompleteWorkoutSessionRequest;
@@ -15,14 +17,19 @@ import com.spotme.proto.plan.v1.ListWorkoutSessionsResponse;
 import com.spotme.proto.plan.v1.LogSetRequest;
 import com.spotme.proto.plan.v1.LogSetResponse;
 import com.spotme.proto.plan.v1.PlanServiceGrpc;
+import com.spotme.proto.plan.v1.RegisterUserRequest;
+import com.spotme.proto.plan.v1.RegisterUserResponse;
 import com.spotme.proto.plan.v1.RecommendRequest;
 import com.spotme.proto.plan.v1.RecommendResponse;
 import com.spotme.proto.plan.v1.SetPrescription;
 import com.spotme.proto.plan.v1.StartWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.StartWorkoutSessionResponse;
+import com.spotme.proto.plan.v1.GetUserProfileRequest;
+import com.spotme.proto.plan.v1.UserProfileResponse;
 import com.spotme.proto.plan.v1.WorkoutSessionResponse;
 import io.grpc.Status;
 import net.devh.boot.grpc.server.service.GrpcService;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.NoSuchElementException;
 
@@ -35,6 +42,8 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
     private final ListRecentWorkoutSessions listRecentWorkoutSessions;
     private final StartWorkoutSession startWorkoutSession;
     private final LogSet logSet;
+    private final RegisterUser registerUser;
+    private final GetUserProfile getUserProfile;
 
     public PlanGrpcService(ComputeNextPrescription useCase,
                            CompleteWorkoutSession completeWorkoutSession,
@@ -42,12 +51,69 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
                            ListRecentWorkoutSessions listRecentWorkoutSessions,
                            StartWorkoutSession startWorkoutSession,
                            LogSet logSet) {
+        this(useCase, completeWorkoutSession, getLatestWorkoutSession, listRecentWorkoutSessions, startWorkoutSession, logSet, null, null);
+    }
+
+    @Autowired
+    public PlanGrpcService(ComputeNextPrescription useCase,
+                           CompleteWorkoutSession completeWorkoutSession,
+                           GetLatestWorkoutSession getLatestWorkoutSession,
+                           ListRecentWorkoutSessions listRecentWorkoutSessions,
+                           StartWorkoutSession startWorkoutSession,
+                           LogSet logSet,
+                           RegisterUser registerUser,
+                           GetUserProfile getUserProfile) {
         this.useCase = useCase;
         this.completeWorkoutSession = completeWorkoutSession;
         this.getLatestWorkoutSession = getLatestWorkoutSession;
         this.listRecentWorkoutSessions = listRecentWorkoutSessions;
         this.startWorkoutSession = startWorkoutSession;
         this.logSet = logSet;
+        this.registerUser = registerUser;
+        this.getUserProfile = getUserProfile;
+    }
+
+    @Override
+    public void registerUser(RegisterUserRequest request,
+                             io.grpc.stub.StreamObserver<RegisterUserResponse> resp) {
+        try {
+            var result = registerUser.handle(new RegisterUser.Command(
+                    request.getExperienceLevel(),
+                    request.getTrainingGoal(),
+                    request.getBaselineSleepHours(),
+                    request.getStressSensitivity()
+            ));
+            resp.onNext(RegisterUserResponse.newBuilder()
+                    .setUserId(result.userId().toString())
+                    .setExperienceLevel(result.experienceLevel().name())
+                    .setTrainingGoal(result.trainingGoal().name())
+                    .setBaselineSleepHours(result.baselineSleepHours())
+                    .setStressSensitivity(result.stressSensitivity())
+                    .build());
+            resp.onCompleted();
+        } catch (IllegalArgumentException e) {
+            resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    @Override
+    public void getUserProfile(GetUserProfileRequest request,
+                               io.grpc.stub.StreamObserver<UserProfileResponse> resp) {
+        try {
+            var result = getUserProfile.handle(new GetUserProfile.Command(request.getUserId()));
+            resp.onNext(UserProfileResponse.newBuilder()
+                    .setUserId(result.userId().toString())
+                    .setExperienceLevel(result.experienceLevel().name())
+                    .setTrainingGoal(result.trainingGoal().name())
+                    .setBaselineSleepHours(result.baselineSleepHours())
+                    .setStressSensitivity(result.stressSensitivity())
+                    .build());
+            resp.onCompleted();
+        } catch (NoSuchElementException e) {
+            resp.onError(Status.NOT_FOUND.withDescription("User not found").asRuntimeException());
+        } catch (IllegalArgumentException e) {
+            resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
+        }
     }
 
     @Override
@@ -64,6 +130,8 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
                     .setStartedAt(result.startedAt().toString())
                     .build());
             resp.onCompleted();
+        } catch (NoSuchElementException e) {
+            resp.onError(Status.NOT_FOUND.withDescription(notFoundDescription(e, "User not found")).asRuntimeException());
         } catch (IllegalArgumentException e) {
             resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -89,7 +157,7 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
                     .build());
             resp.onCompleted();
         } catch (NoSuchElementException e) {
-            resp.onError(Status.NOT_FOUND.withDescription("Workout session not found").asRuntimeException());
+            resp.onError(Status.NOT_FOUND.withDescription(notFoundDescription(e, "Workout session not found")).asRuntimeException());
         } catch (IllegalArgumentException | IllegalStateException e) {
             resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -119,7 +187,7 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
             resp.onNext(recResBuilder.build());
             resp.onCompleted();
         } catch (NoSuchElementException e) {
-            resp.onError(Status.NOT_FOUND.withDescription("Workout history not found").asRuntimeException());
+            resp.onError(Status.NOT_FOUND.withDescription(notFoundDescription(e, "Workout history not found")).asRuntimeException());
         } catch (IllegalArgumentException | IllegalStateException e) {
             resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -155,7 +223,7 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
             resp.onNext(response);
             resp.onCompleted();
         } catch (NoSuchElementException e) {
-            resp.onError(Status.NOT_FOUND.withDescription("Workout session not found").asRuntimeException());
+            resp.onError(Status.NOT_FOUND.withDescription(notFoundDescription(e, "Workout session not found")).asRuntimeException());
         } catch (IllegalArgumentException | IllegalStateException e) {
             resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -169,7 +237,7 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
             resp.onNext(toWorkoutSessionResponse(result.summary()));
             resp.onCompleted();
         } catch (NoSuchElementException e) {
-            resp.onError(Status.NOT_FOUND.withDescription("Workout session not found").asRuntimeException());
+            resp.onError(Status.NOT_FOUND.withDescription(notFoundDescription(e, "Workout session not found")).asRuntimeException());
         } catch (IllegalArgumentException e) {
             resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -187,6 +255,8 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
             result.sessions().forEach(session -> response.addSessions(toWorkoutSessionResponse(session)));
             resp.onNext(response.build());
             resp.onCompleted();
+        } catch (NoSuchElementException e) {
+            resp.onError(Status.NOT_FOUND.withDescription(notFoundDescription(e, "User not found")).asRuntimeException());
         } catch (IllegalArgumentException e) {
             resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -206,5 +276,9 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
                 .setCompletionReason(summary.completionDecision().reason().name());
         summary.finishedAt().ifPresent(finishedAt -> response.setFinishedAt(finishedAt.toString()));
         return response.build();
+    }
+
+    private String notFoundDescription(NoSuchElementException e, String fallback) {
+        return e.getMessage() == null || e.getMessage().isBlank() ? fallback : e.getMessage();
     }
 }

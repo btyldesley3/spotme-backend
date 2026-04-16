@@ -3,10 +3,10 @@ package com.spotme.application.usecase;
 import com.spotme.domain.model.user.UserId;
 import com.spotme.domain.model.workout.WorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionId;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * Begins a new in-progress workout session and persists it so subsequent
@@ -14,6 +14,7 @@ import java.util.UUID;
  */
 public class StartWorkoutSession {
 
+    private final UserReadPort users;
     private final WorkoutWritePort write;
 
     public record Command(String userId, String startedAt) {
@@ -22,12 +23,13 @@ public class StartWorkoutSession {
     public record Result(WorkoutSessionId sessionId, UserId userId, Instant startedAt) {
     }
 
-    public StartWorkoutSession(WorkoutWritePort write) {
+    public StartWorkoutSession(UserReadPort users, WorkoutWritePort write) {
+        this.users = users;
         this.write = write;
     }
 
     public Result handle(Command command) {
-        var userId = new UserId(UUID.fromString(command.userId()));
+        var userId = UserExistenceGuard.requireExistingUser(command.userId(), users);
         Instant startedAt = command.startedAt() == null || command.startedAt().isBlank()
                 ? Instant.now()
                 : Instant.parse(command.startedAt());

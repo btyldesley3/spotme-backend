@@ -5,6 +5,7 @@ import com.spotme.domain.model.metrics.Rpe;
 import com.spotme.domain.model.user.UserId;
 import com.spotme.domain.model.workout.SetEntry;
 import com.spotme.domain.model.workout.WorkoutSessionId;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 
@@ -16,6 +17,7 @@ import java.util.UUID;
  */
 public class LogSet {
 
+    private final UserReadPort users;
     private final WorkoutReadPort read;
     private final WorkoutWritePort write;
 
@@ -34,13 +36,14 @@ public class LogSet {
     public record Result(WorkoutSessionId sessionId, int totalSetsInSession) {
     }
 
-    public LogSet(WorkoutReadPort read, WorkoutWritePort write) {
+    public LogSet(UserReadPort users, WorkoutReadPort read, WorkoutWritePort write) {
+        this.users = users;
         this.read = read;
         this.write = write;
     }
 
     public Result handle(Command command) {
-        var userId = new UserId(UUID.fromString(command.userId()));
+        var userId = UserExistenceGuard.requireExistingUser(command.userId(), users);
         var sessionId = new WorkoutSessionId(UUID.fromString(command.sessionId()));
         var exerciseId = new ExerciseId(UUID.fromString(command.exerciseId()));
 

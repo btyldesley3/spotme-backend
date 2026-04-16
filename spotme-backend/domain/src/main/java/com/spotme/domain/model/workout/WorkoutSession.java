@@ -212,6 +212,10 @@ public class WorkoutSession {
         return Optional.ofNullable(sleepQualityReport);
     }
 
+    public Optional<WorkoutCompletionPolicy> completionPolicy() {
+        return Optional.ofNullable(completionPolicy);
+    }
+
     public Map<ExerciseId, List<SetEntry>> sets() {
         Map<ExerciseId, List<SetEntry>> copy = new LinkedHashMap<>();
         setsByExercise.forEach((exerciseId, entries) -> copy.put(exerciseId, List.copyOf(entries)));

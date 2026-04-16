@@ -8,12 +8,42 @@ option java_multiple_files = true;
 
 // The Plan service definition.
 service PlanService {
+  rpc RegisterUser (RegisterUserRequest) returns (RegisterUserResponse);
+  rpc GetUserProfile (GetUserProfileRequest) returns (UserProfileResponse);
   rpc StartWorkoutSession (StartWorkoutSessionRequest) returns (StartWorkoutSessionResponse);
   rpc LogSet (LogSetRequest) returns (LogSetResponse);
   rpc Recommend (RecommendRequest) returns (RecommendResponse);
   rpc CompleteWorkoutSession (CompleteWorkoutSessionRequest) returns (CompleteWorkoutSessionResponse);
   rpc GetLatestWorkoutSession (GetLatestWorkoutSessionRequest) returns (WorkoutSessionResponse);
   rpc ListRecentWorkoutSessions (ListRecentWorkoutSessionsRequest) returns (ListWorkoutSessionsResponse);
+}
+
+// Register a new user profile used by workout and recommendation flows.
+message RegisterUserRequest {
+  string experience_level = 1;
+  string training_goal = 2;
+  int32 baseline_sleep_hours = 3;
+  int32 stress_sensitivity = 4;
+}
+
+message RegisterUserResponse {
+  string user_id = 1;
+  string experience_level = 2;
+  string training_goal = 3;
+  int32 baseline_sleep_hours = 4;
+  int32 stress_sensitivity = 5;
+}
+
+message GetUserProfileRequest {
+  string user_id = 1;
+}
+
+message UserProfileResponse {
+  string user_id = 1;
+  string experience_level = 2;
+  string training_goal = 3;
+  int32 baseline_sleep_hours = 4;
+  int32 stress_sensitivity = 5;
 }
 
 // Start a new workout session for a user

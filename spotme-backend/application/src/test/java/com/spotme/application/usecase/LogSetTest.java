@@ -2,7 +2,12 @@ package com.spotme.application.usecase;
 
 import com.spotme.domain.model.exercise.ExerciseId;
 import com.spotme.domain.model.plan.Prescription;
+import com.spotme.domain.model.user.ExperienceLevel;
+import com.spotme.domain.model.user.RecoveryProfile;
+import com.spotme.domain.model.user.TrainingGoal;
+import com.spotme.domain.model.user.User;
 import com.spotme.domain.model.user.UserId;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.model.workout.WorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionId;
 import com.spotme.domain.port.WorkoutReadPort;
@@ -55,7 +60,7 @@ class LogSetTest {
             @Override public void saveSession(WorkoutSession s) { savedSession.set(s); }
         };
 
-        var useCase = new LogSet(read, write);
+        var useCase = new LogSet(existingUserPort(userId), read, write);
         var result = useCase.handle(new LogSet.Command(
                 userId.toString(),
                 session.sessionId().toString(),
@@ -88,7 +93,7 @@ class LogSetTest {
             @Override public void saveSession(WorkoutSession s) {}
         };
 
-        var useCase = new LogSet(read, write);
+        var useCase = new LogSet(existingUserPort(userId), read, write);
 
         // First log set 1 (ok)
         useCase.handle(new LogSet.Command(
@@ -120,11 +125,44 @@ class LogSetTest {
             @Override public void saveSession(WorkoutSession s) {}
         };
 
-        var useCase = new LogSet(read, write);
+        var useCase = new LogSet(existingUserPort(userId), read, write);
         assertThrows(java.util.NoSuchElementException.class, () -> useCase.handle(new LogSet.Command(
                 userId.toString(), WorkoutSessionId.random().toString(),
                 exerciseId.toString(), 1, 8, 60.0, 8.0, "orphan"
         )));
+    }
+
+    @Test
+    void throwsWhenUserDoesNotExist() {
+        WorkoutReadPort read = new WorkoutReadPort() {
+            @Override
+            public Optional<ProgressionInput> lastProgressionInput(UserId u, ExerciseId e) { return Optional.empty(); }
+            @Override
+            public Optional<WorkoutSession> findSession(UserId u, WorkoutSessionId id) { return Optional.of(session); }
+            @Override
+            public Optional<WorkoutSession> findLatestSession(UserId u) { return Optional.empty(); }
+            @Override
+            public List<WorkoutSession> listSessionsFor(UserId u, int limit) { return Collections.emptyList(); }
+        };
+        WorkoutWritePort write = new WorkoutWritePort() {
+            @Override public void savePrescription(UserId u, Prescription p) {}
+            @Override public void saveSession(WorkoutSession s) {}
+        };
+
+        var useCase = new LogSet(missingUserPort(), read, write);
+        assertThrows(java.util.NoSuchElementException.class, () -> useCase.handle(new LogSet.Command(
+                userId.toString(), session.sessionId().toString(),
+                exerciseId.toString(), 1, 8, 60.0, 8.0, "working set"
+        )));
+    }
+
+    private UserReadPort existingUserPort(UserId existingUserId) {
+        var user = new User(existingUserId, ExperienceLevel.BEGINNER, TrainingGoal.STRENGTH, new RecoveryProfile(7, 3));
+        return requested -> requested.equals(existingUserId) ? Optional.of(user) : Optional.empty();
+    }
+
+    private UserReadPort missingUserPort() {
+        return requested -> Optional.empty();
     }
 }
 

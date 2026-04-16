@@ -5,6 +5,7 @@ import com.spotme.domain.model.exercise.ExerciseId;
 import com.spotme.domain.model.plan.Prescription;
 import com.spotme.domain.model.user.UserId;
 import com.spotme.domain.port.RulesConfigPort;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 import com.spotme.domain.rules.ProgressionEngine;
@@ -13,6 +14,7 @@ import com.spotme.domain.rules.ProgressionPolicy;
 import java.util.UUID;
 
 public class ComputeNextPrescription {
+    private final UserReadPort users;
     private final WorkoutReadPort read;
     private final WorkoutWritePort write;
     private final RulesConfigPort rules;
@@ -27,14 +29,15 @@ public class ComputeNextPrescription {
     public record Result(
             Prescription prescription) { }
 
-    public ComputeNextPrescription(WorkoutReadPort read, WorkoutWritePort write, RulesConfigPort config) {
+    public ComputeNextPrescription(UserReadPort users, WorkoutReadPort read, WorkoutWritePort write, RulesConfigPort config) {
+        this.users = users;
         this.read = read;
         this.write = write;
         this.rules = config;
     }
 
     public Result handle(Command command) {
-        var userId = new UserId(UUID.fromString(command.userId()));
+        var userId = UserExistenceGuard.requireExistingUser(command.userId(), users);
         var exerciseId = new ExerciseId(UUID.fromString(command.exerciseId()));
 
         var last = read.lastProgressionInput(userId, exerciseId).orElseThrow(); // 404 or domain error in adapter if missing

@@ -12,12 +12,10 @@ import com.spotme.domain.model.workout.WorkoutSessionId;
 import com.spotme.domain.port.WorkoutReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 import com.spotme.domain.rules.ProgressionInput;
-import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.*;
 
-@Repository
 public class InMemoryWorkoutAdapter implements WorkoutReadPort, WorkoutWritePort {
 
     private final Map<UserId, List<WorkoutSession>> sessions = new HashMap<>();

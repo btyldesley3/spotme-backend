@@ -6,6 +6,7 @@ import com.spotme.domain.model.workout.WorkoutSessionId;
 import com.spotme.domain.model.workout.WorkoutSessionSummary;
 import com.spotme.domain.model.metrics.Doms;
 import com.spotme.domain.model.metrics.SleepQuality;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 
@@ -13,6 +14,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public class CompleteWorkoutSession {
+    private final UserReadPort users;
     private final WorkoutReadPort read;
     private final WorkoutWritePort write;
 
@@ -32,13 +34,14 @@ public class CompleteWorkoutSession {
     public record Result(WorkoutSessionSummary summary) {
     }
 
-    public CompleteWorkoutSession(WorkoutReadPort read, WorkoutWritePort write) {
+    public CompleteWorkoutSession(UserReadPort users, WorkoutReadPort read, WorkoutWritePort write) {
+        this.users = users;
         this.read = read;
         this.write = write;
     }
 
     public Result handle(Command command) {
-        var userId = new UserId(UUID.fromString(command.userId()));
+        var userId = UserExistenceGuard.requireExistingUser(command.userId(), users);
         var sessionId = new WorkoutSessionId(UUID.fromString(command.sessionId()));
         var finishedAt = Instant.parse(command.finishedAt());
 

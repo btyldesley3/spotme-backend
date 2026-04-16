@@ -8,10 +8,15 @@ import com.spotme.domain.model.metrics.Doms;
 import com.spotme.domain.model.metrics.Rpe;
 import com.spotme.domain.model.metrics.SleepQuality;
 import com.spotme.domain.model.plan.Prescription;
+ import com.spotme.domain.model.user.ExperienceLevel;
+import com.spotme.domain.model.user.RecoveryProfile;
+import com.spotme.domain.model.user.TrainingGoal;
+import com.spotme.domain.model.user.User;
 import com.spotme.domain.model.user.UserId;
 import com.spotme.domain.model.workout.WorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionId;
 import com.spotme.domain.port.RulesConfigPort;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 import com.spotme.domain.rules.ProgressionInput;
@@ -76,7 +81,8 @@ class PlanGrpcServiceRecommendTest {
         };
 
         RulesConfigPort rules = version -> rulesJson();
-        var useCase = new ComputeNextPrescription(read, write, rules);
+        UserReadPort users = existingUserPort(userId);
+        var useCase = new ComputeNextPrescription(users, read, write, rules);
         var service = new PlanGrpcService(useCase, null, null, null, null, null);
 
         var observer = new CapturingObserver<RecommendResponse>();
@@ -131,8 +137,9 @@ class PlanGrpcServiceRecommendTest {
         };
 
         RulesConfigPort rules = version -> rulesJson();
+        UserReadPort users = existingUserPort(UserId.random());
 
-        var service = new PlanGrpcService(new ComputeNextPrescription(read, write, rules), null, null, null, null, null);
+        var service = new PlanGrpcService(new ComputeNextPrescription(users, read, write, rules), null, null, null, null, null);
         var observer = new CapturingObserver<RecommendResponse>();
 
         service.recommend(RecommendRequest.newBuilder()
@@ -183,8 +190,9 @@ class PlanGrpcServiceRecommendTest {
         RulesConfigPort rules = version -> {
             throw new IllegalArgumentException("unknown rules version");
         };
+        UserReadPort users = existingUserPort(UserId.random());
 
-        var service = new PlanGrpcService(new ComputeNextPrescription(read, write, rules), null, null, null, null, null);
+        var service = new PlanGrpcService(new ComputeNextPrescription(users, read, write, rules), null, null, null, null, null);
         var observer = new CapturingObserver<RecommendResponse>();
 
         service.recommend(RecommendRequest.newBuilder()
@@ -194,6 +202,65 @@ class PlanGrpcServiceRecommendTest {
 
         StatusRuntimeException ex = (StatusRuntimeException) observer.error;
         assertEquals(Status.Code.INVALID_ARGUMENT, ex.getStatus().getCode());
+    }
+
+    @Test
+    void recommendMapsMissingUserToNotFound() {
+        WorkoutReadPort read = new WorkoutReadPort() {
+            @Override
+            public Optional<ProgressionInput> lastProgressionInput(UserId requestedUserId, ExerciseId requestedExerciseId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<WorkoutSession> findSession(UserId userId, WorkoutSessionId sessionId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<WorkoutSession> findLatestSession(UserId userId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public java.util.List<WorkoutSession> listSessionsFor(UserId userId, int limit) {
+                return Collections.emptyList();
+            }
+        };
+
+        WorkoutWritePort write = new WorkoutWritePort() {
+            @Override
+            public void savePrescription(UserId userId, Prescription prescription) {
+            }
+
+            @Override
+            public void saveSession(WorkoutSession session) {
+            }
+        };
+
+        RulesConfigPort rules = version -> rulesJson();
+        UserReadPort users = missingUserPort();
+
+        var service = new PlanGrpcService(new ComputeNextPrescription(users, read, write, rules), null, null, null, null, null);
+        var observer = new CapturingObserver<RecommendResponse>();
+
+        service.recommend(RecommendRequest.newBuilder()
+                .setUserId(UserId.random().toString())
+                .setExerciseId(UUID.randomUUID().toString())
+                .build(), observer);
+
+        StatusRuntimeException ex = (StatusRuntimeException) observer.error;
+        assertEquals(Status.Code.NOT_FOUND, ex.getStatus().getCode());
+        assertEquals("User not found", ex.getStatus().getDescription());
+    }
+
+    private UserReadPort existingUserPort(UserId userId) {
+        var user = new User(userId, ExperienceLevel.BEGINNER, TrainingGoal.STRENGTH, new RecoveryProfile(7, 3));
+        return requested -> requested.equals(userId) ? Optional.of(user) : Optional.empty();
+    }
+
+    private UserReadPort missingUserPort() {
+        return requested -> Optional.empty();
     }
 
     private JsonNode rulesJson() {

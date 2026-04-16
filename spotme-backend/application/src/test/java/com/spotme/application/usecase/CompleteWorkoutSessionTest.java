@@ -3,11 +3,16 @@ package com.spotme.application.usecase;
 import com.spotme.domain.model.exercise.ExerciseId;
 import com.spotme.domain.model.metrics.Rpe;
 import com.spotme.domain.model.plan.Prescription;
+import com.spotme.domain.model.user.ExperienceLevel;
+import com.spotme.domain.model.user.RecoveryProfile;
+import com.spotme.domain.model.user.TrainingGoal;
+import com.spotme.domain.model.user.User;
 import com.spotme.domain.model.user.UserId;
 import com.spotme.domain.model.workout.SetEntry;
 import com.spotme.domain.model.workout.WorkoutCompletionDecision;
 import com.spotme.domain.model.workout.WorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionId;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 import com.spotme.domain.rules.ProgressionInput;
@@ -36,7 +41,7 @@ class CompleteWorkoutSessionTest {
         AtomicReference<WorkoutSession> saved = new AtomicReference<>();
         WorkoutWritePort write = captureWritePort(saved);
 
-        var useCase = new CompleteWorkoutSession(read, write);
+        var useCase = new CompleteWorkoutSession(existingUserPort(userId), read, write);
         var result = useCase.handle(new CompleteWorkoutSession.Command(
                 userId.toString(),
                 session.sessionId().toString(),
@@ -68,7 +73,7 @@ class CompleteWorkoutSessionTest {
         AtomicReference<WorkoutSession> saved = new AtomicReference<>();
         WorkoutWritePort write = captureWritePort(saved);
 
-        var useCase = new CompleteWorkoutSession(read, write);
+        var useCase = new CompleteWorkoutSession(existingUserPort(userId), read, write);
         var result = useCase.handle(new CompleteWorkoutSession.Command(
                 userId.toString(),
                 session.sessionId().toString(),
@@ -97,7 +102,7 @@ class CompleteWorkoutSessionTest {
         WorkoutReadPort read = mapBackedReadPort(Map.of(session.sessionId(), session), userId, exerciseId);
         WorkoutWritePort write = captureWritePort(new AtomicReference<>());
 
-        var useCase = new CompleteWorkoutSession(read, write);
+        var useCase = new CompleteWorkoutSession(existingUserPort(userId), read, write);
 
         assertThrows(IllegalArgumentException.class, () -> useCase.handle(new CompleteWorkoutSession.Command(
                 userId.toString(),
@@ -109,6 +114,31 @@ class CompleteWorkoutSessionTest {
                 true,
                 3,
                 null
+        )));
+    }
+
+    @Test
+    void throwsWhenUserDoesNotExist() {
+        var userId = UserId.random();
+        var session = WorkoutSession.start(userId, Instant.parse("2026-04-13T12:00:00Z"));
+        var exerciseId = ExerciseId.random();
+        session.addSet(exerciseId, new SetEntry(1, 8, 60.0, new Rpe(8.0), "set-1"));
+
+        WorkoutReadPort read = mapBackedReadPort(Map.of(session.sessionId(), session), userId, exerciseId);
+        WorkoutWritePort write = captureWritePort(new AtomicReference<>());
+
+        var useCase = new CompleteWorkoutSession(missingUserPort(), read, write);
+
+        assertThrows(java.util.NoSuchElementException.class, () -> useCase.handle(new CompleteWorkoutSession.Command(
+                userId.toString(),
+                session.sessionId().toString(),
+                "2026-04-13T12:30:00Z",
+                1,
+                1,
+                1,
+                true,
+                3,
+                7
         )));
     }
 
@@ -156,6 +186,15 @@ class CompleteWorkoutSessionTest {
                 savedSessionRef.set(session);
             }
         };
+    }
+
+    private UserReadPort existingUserPort(UserId userId) {
+        var user = new User(userId, ExperienceLevel.INTERMEDIATE, TrainingGoal.STRENGTH, new RecoveryProfile(7, 3));
+        return requested -> requested.equals(userId) ? Optional.of(user) : Optional.empty();
+    }
+
+    private UserReadPort missingUserPort() {
+        return requested -> Optional.empty();
     }
 }
 

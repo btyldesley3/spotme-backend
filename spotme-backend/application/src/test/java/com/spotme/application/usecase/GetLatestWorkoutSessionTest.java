@@ -1,6 +1,7 @@
 package com.spotme.application.usecase;
 
 import com.spotme.domain.model.user.UserId;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutReadPort;
 import org.junit.jupiter.api.Test;
 
@@ -19,7 +20,7 @@ class GetLatestWorkoutSessionTest {
         var userId = UserId.random();
         var workoutPort = createMockWorkoutPort(userId, 2);
 
-        var useCase = new GetLatestWorkoutSession(workoutPort);
+        var useCase = new GetLatestWorkoutSession(existingUserPort(userId), workoutPort);
         var result = useCase.handle(new GetLatestWorkoutSession.Command(userId.toString()));
 
         assertEquals(userId, result.summary().userId());
@@ -30,11 +31,37 @@ class GetLatestWorkoutSessionTest {
         var userId = UserId.random();
         var workoutPort = new StubWorkoutReadPort(Map.of());
 
-        var useCase = new GetLatestWorkoutSession(workoutPort);
+        var useCase = new GetLatestWorkoutSession(existingUserPort(userId), workoutPort);
 
         assertThrows(java.util.NoSuchElementException.class, () ->
                 useCase.handle(new GetLatestWorkoutSession.Command(userId.toString()))
         );
+    }
+
+    @Test
+    void throwsWhenUserDoesNotExist() {
+        var userId = UserId.random();
+        var workoutPort = createMockWorkoutPort(userId, 1);
+
+        var useCase = new GetLatestWorkoutSession(missingUserPort(), workoutPort);
+
+        assertThrows(java.util.NoSuchElementException.class, () ->
+                useCase.handle(new GetLatestWorkoutSession.Command(userId.toString()))
+        );
+    }
+
+    private UserReadPort existingUserPort(UserId userId) {
+        var user = new com.spotme.domain.model.user.User(
+                userId,
+                com.spotme.domain.model.user.ExperienceLevel.BEGINNER,
+                com.spotme.domain.model.user.TrainingGoal.STRENGTH,
+                new com.spotme.domain.model.user.RecoveryProfile(7, 3)
+        );
+        return requested -> requested.equals(userId) ? Optional.of(user) : Optional.empty();
+    }
+
+    private UserReadPort missingUserPort() {
+        return requested -> Optional.empty();
     }
 
     private WorkoutReadPort createMockWorkoutPort(UserId userId, int sessionCount) {

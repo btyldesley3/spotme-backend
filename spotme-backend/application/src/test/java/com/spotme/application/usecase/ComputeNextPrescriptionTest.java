@@ -6,11 +6,16 @@ import com.spotme.domain.model.metrics.Doms;
 import com.spotme.domain.model.metrics.Rpe;
 import com.spotme.domain.model.metrics.SleepQuality;
 import com.spotme.domain.model.plan.Prescription;
+import com.spotme.domain.model.user.ExperienceLevel;
+import com.spotme.domain.model.user.RecoveryProfile;
+import com.spotme.domain.model.user.TrainingGoal;
+import com.spotme.domain.model.user.User;
 import com.spotme.domain.model.user.UserId;
 import com.spotme.domain.model.workout.SetEntry;
 import com.spotme.domain.model.workout.WorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionId;
 import com.spotme.domain.port.RulesConfigPort;
+import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.WorkoutReadPort;
 import com.spotme.domain.port.WorkoutWritePort;
 import org.junit.jupiter.api.Test;
@@ -109,7 +114,7 @@ class ComputeNextPrescriptionTest {
                 """);
         RulesConfigPort rulesPort = version -> rulesJson;
 
-        var useCase = new ComputeNextPrescription(readPort, writePort, rulesPort);
+        var useCase = new ComputeNextPrescription(existingUserPort(userId), readPort, writePort, rulesPort);
         var result = useCase.handle(new ComputeNextPrescription.Command(
                 userId.toString(),
                 exerciseId.toString(),
@@ -216,7 +221,7 @@ class ComputeNextPrescriptionTest {
             }
         };
 
-        var useCase = new ComputeNextPrescription(readPort, writePort, rulesPort);
+        var useCase = new ComputeNextPrescription(existingUserPort(userId), readPort, writePort, rulesPort);
         useCase.handle(new ComputeNextPrescription.Command(
                 userId.toString(),
                 exerciseId.toString(),
@@ -232,6 +237,64 @@ class ComputeNextPrescriptionTest {
                 "v2.0.0",
                 "barbell_upper"
         )));
+    }
+
+    @Test
+    void throwsWhenUserDoesNotExist() throws Exception {
+        var userId = UserId.random();
+        var exerciseId = ExerciseId.random();
+
+        WorkoutReadPort readPort = new WorkoutReadPort() {
+            @Override
+            public Optional<com.spotme.domain.rules.ProgressionInput> lastProgressionInput(UserId requestedUserId, ExerciseId requestedExerciseId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<WorkoutSession> findSession(UserId requestedUserId, WorkoutSessionId sessionId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<WorkoutSession> findLatestSession(UserId requestedUserId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public java.util.List<WorkoutSession> listSessionsFor(UserId requestedUserId, int limit) {
+                return java.util.Collections.emptyList();
+            }
+        };
+
+        WorkoutWritePort writePort = new WorkoutWritePort() {
+            @Override
+            public void savePrescription(UserId requestedUserId, Prescription prescription) {
+            }
+
+            @Override
+            public void saveSession(WorkoutSession sessionToSave) {
+            }
+        };
+
+        var rulesJson = new ObjectMapper().readTree("{\"progression_logic\":{},\"recovery\":{}}");
+        RulesConfigPort rulesPort = version -> rulesJson;
+
+        var useCase = new ComputeNextPrescription(missingUserPort(), readPort, writePort, rulesPort);
+        assertThrows(java.util.NoSuchElementException.class, () -> useCase.handle(new ComputeNextPrescription.Command(
+                userId.toString(),
+                exerciseId.toString(),
+                "v1.0.0",
+                "barbell_upper"
+        )));
+    }
+
+    private UserReadPort existingUserPort(UserId userId) {
+        var user = new User(userId, ExperienceLevel.BEGINNER, TrainingGoal.STRENGTH, new RecoveryProfile(7, 3));
+        return requested -> requested.equals(userId) ? Optional.of(user) : Optional.empty();
+    }
+
+    private UserReadPort missingUserPort() {
+        return requested -> Optional.empty();
     }
 }
 

@@ -1,10 +1,12 @@
 package com.spotme.adapters.in.rest;
 
 import com.spotme.proto.plan.v1.CompleteWorkoutSessionRequest;
+import com.spotme.proto.plan.v1.GetUserProfileRequest;
 import com.spotme.proto.plan.v1.GetLatestWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.ListRecentWorkoutSessionsRequest;
 import com.spotme.proto.plan.v1.LogSetRequest;
 import com.spotme.proto.plan.v1.PlanServiceGrpc;
+import com.spotme.proto.plan.v1.RegisterUserRequest;
 import com.spotme.proto.plan.v1.RecommendRequest;
 import com.spotme.proto.plan.v1.StartWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.WorkoutSessionResponse;
@@ -34,6 +36,36 @@ public class PlanRestController {
 
     public PlanRestController(PlanServiceGrpc.PlanServiceBlockingStub planStub) {
         this.planStub = planStub;
+    }
+
+    @PostMapping("/users")
+    public RegisterUserDto registerUser(@Valid @RequestBody RegisterUserRequestDto body) {
+        var grpcRes = planStub.registerUser(RegisterUserRequest.newBuilder()
+                .setExperienceLevel(body.experienceLevel())
+                .setTrainingGoal(body.trainingGoal())
+                .setBaselineSleepHours(body.baselineSleepHours())
+                .setStressSensitivity(body.stressSensitivity())
+                .build());
+
+        return new RegisterUserDto(
+                grpcRes.getUserId(),
+                grpcRes.getExperienceLevel(),
+                grpcRes.getTrainingGoal(),
+                grpcRes.getBaselineSleepHours(),
+                grpcRes.getStressSensitivity()
+        );
+    }
+
+    @GetMapping("/users/{userId}")
+    public UserProfileDto getUser(@PathVariable String userId) {
+        var grpcRes = planStub.getUserProfile(GetUserProfileRequest.newBuilder().setUserId(userId).build());
+        return new UserProfileDto(
+                grpcRes.getUserId(),
+                grpcRes.getExperienceLevel(),
+                grpcRes.getTrainingGoal(),
+                grpcRes.getBaselineSleepHours(),
+                grpcRes.getStressSensitivity()
+        );
     }
 
     @PostMapping("/workout-sessions/start")
@@ -149,6 +181,27 @@ public class PlanRestController {
 
     public record StartWorkoutSessionRequestDto(@NotBlank String userId, String startedAt) {}
     public record StartWorkoutSessionDto(String sessionId, String userId, String startedAt) {}
+
+    public record RegisterUserRequestDto(
+            @NotBlank String experienceLevel,
+            @NotBlank String trainingGoal,
+            @Min(1) @Max(24) int baselineSleepHours,
+            @Min(1) @Max(5) int stressSensitivity
+    ) {}
+    public record RegisterUserDto(
+            String userId,
+            String experienceLevel,
+            String trainingGoal,
+            int baselineSleepHours,
+            int stressSensitivity
+    ) {}
+    public record UserProfileDto(
+            String userId,
+            String experienceLevel,
+            String trainingGoal,
+            int baselineSleepHours,
+            int stressSensitivity
+    ) {}
 
     public record LogSetRequestDto(
             @NotBlank String userId,
