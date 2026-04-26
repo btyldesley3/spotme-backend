@@ -5,3 +5,8 @@ spring:
 grpc:
   server:
     port: 0   # random port so tests don't clash with dev server
+
+spotme:
+  jwt:
+    # 32-byte key in base64 for tests only
+    secret: Zm9yLXRlc3RzLW9ubHktMzItYnl0ZS1qd3Qta2V5LTAwMDE=

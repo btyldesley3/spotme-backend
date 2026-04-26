@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Inherit Spring Boot's default patterns so console output looks familiar -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="spotme"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <!-- Include requestId from MDC after timestamp; blank when not in a request context -->
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%X{requestId:--}] [%thread] %cyan(%logger{36}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Keep framework noise at WARN in all profiles -->
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="io.grpc" level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+    <logger name="org.flywaydb" level="INFO"/>
+
+    <!-- SpotMe application code at DEBUG in dev, INFO elsewhere -->
+    <springProfile name="default,dev">
+        <logger name="com.spotme" level="DEBUG"/>
+    </springProfile>
+    <springProfile name="test,prod">
+        <logger name="com.spotme" level="INFO"/>
+    </springProfile>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>
+

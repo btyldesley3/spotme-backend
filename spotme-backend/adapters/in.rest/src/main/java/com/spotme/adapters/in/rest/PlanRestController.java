@@ -6,7 +6,6 @@ import com.spotme.proto.plan.v1.GetLatestWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.ListRecentWorkoutSessionsRequest;
 import com.spotme.proto.plan.v1.LogSetRequest;
 import com.spotme.proto.plan.v1.PlanServiceGrpc;
-import com.spotme.proto.plan.v1.RegisterUserRequest;
 import com.spotme.proto.plan.v1.RecommendRequest;
 import com.spotme.proto.plan.v1.StartWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.WorkoutSessionResponse;
@@ -14,8 +13,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -38,26 +39,15 @@ public class PlanRestController {
         this.planStub = planStub;
     }
 
-    @PostMapping("/users")
-    public RegisterUserDto registerUser(@Valid @RequestBody RegisterUserRequestDto body) {
-        var grpcRes = planStub.registerUser(RegisterUserRequest.newBuilder()
-                .setExperienceLevel(body.experienceLevel())
-                .setTrainingGoal(body.trainingGoal())
-                .setBaselineSleepHours(body.baselineSleepHours())
-                .setStressSensitivity(body.stressSensitivity())
-                .build());
+    // ── User Profile ─────────────────────────────────────────────────────────
 
-        return new RegisterUserDto(
-                grpcRes.getUserId(),
-                grpcRes.getExperienceLevel(),
-                grpcRes.getTrainingGoal(),
-                grpcRes.getBaselineSleepHours(),
-                grpcRes.getStressSensitivity()
-        );
-    }
-
+    /**
+     * Fetch own profile. Users may only retrieve their own profile.
+     * Requesting another user's profile returns 403 Forbidden.
+     */
     @GetMapping("/users/{userId}")
     public UserProfileDto getUser(@PathVariable String userId) {
+        enforceOwnership(userId);
         var grpcRes = planStub.getUserProfile(GetUserProfileRequest.newBuilder().setUserId(userId).build());
         return new UserProfileDto(
                 grpcRes.getUserId(),
@@ -68,11 +58,15 @@ public class PlanRestController {
         );
     }
 
+    // ── Workout Sessions ──────────────────────────────────────────────────────
+
     @PostMapping("/workout-sessions/start")
-    public StartWorkoutSessionDto start(@Valid @RequestBody StartWorkoutSessionRequestDto body) {
+    public StartWorkoutSessionDto start(@RequestBody(required = false) StartWorkoutSessionRequestDto body) {
+        var userId = authenticatedUserId();
+        var startedAt = body != null && body.startedAt() != null ? body.startedAt() : "";
         var grpcReq = StartWorkoutSessionRequest.newBuilder()
-                .setUserId(body.userId())
-                .setStartedAt(body.startedAt() == null ? "" : body.startedAt())
+                .setUserId(userId)
+                .setStartedAt(startedAt)
                 .build();
 
         var grpcRes = planStub.startWorkoutSession(grpcReq);
@@ -81,8 +75,9 @@ public class PlanRestController {
 
     @PostMapping("/workout-sessions/{sessionId}/sets")
     public LogSetDto logSet(@PathVariable String sessionId, @Valid @RequestBody LogSetRequestDto body) {
+        var userId = authenticatedUserId();
         var grpcReq = LogSetRequest.newBuilder()
-                .setUserId(body.userId())
+                .setUserId(userId)
                 .setSessionId(sessionId)
                 .setExerciseId(body.exerciseId())
                 .setSetNumber(body.setNumber())
@@ -96,32 +91,11 @@ public class PlanRestController {
         return new LogSetDto(grpcRes.getSessionId(), grpcRes.getTotalSetsInSession());
     }
 
-    @PostMapping("/recommendations")
-    public RecommendDto recommend(@Valid @RequestBody RecommendRequestDto body) {
-        var grpcReq = RecommendRequest.newBuilder()
-                .setUserId(body.userId())
-                .setExerciseId(body.exerciseId())
-                .setRulesVersion(body.rulesVersion() == null ? "" : body.rulesVersion())
-                .setModalityKey(body.modalityKey() == null ? "" : body.modalityKey())
-                .build();
-
-        var grpcRes = planStub.recommend(grpcReq);
-        var sets = grpcRes.getSetsList().stream()
-                .map(s -> new PrescriptionSetDto(
-                        s.getExerciseId(),
-                        s.getOrder(),
-                        s.getPrescribedReps(),
-                        s.getPrescribedWeightKg(),
-                        s.getIsBackoff()))
-                .toList();
-
-        return new RecommendDto(sets);
-    }
-
     @PostMapping("/workout-sessions/{sessionId}/complete")
     public CompleteWorkoutDto complete(@PathVariable String sessionId, @Valid @RequestBody CompleteWorkoutRequestDto body) {
+        var userId = authenticatedUserId();
         var b = CompleteWorkoutSessionRequest.newBuilder()
-                .setUserId(body.userId())
+                .setUserId(userId)
                 .setSessionId(sessionId)
                 .setFinishedAt(body.finishedAt())
                 .setMinTotalSets(body.minTotalSets())
@@ -147,7 +121,8 @@ public class PlanRestController {
     }
 
     @GetMapping("/workout-sessions/latest")
-    public WorkoutSessionDto latest(@RequestParam String userId) {
+    public WorkoutSessionDto latest() {
+        var userId = authenticatedUserId();
         var grpcRes = planStub.getLatestWorkoutSession(
                 GetLatestWorkoutSessionRequest.newBuilder().setUserId(userId).build()
         );
@@ -155,12 +130,61 @@ public class PlanRestController {
     }
 
     @GetMapping("/workout-sessions/recent")
-    public RecentSessionsDto recent(@RequestParam String userId, @RequestParam(defaultValue = "10") int limit) {
+    public RecentSessionsDto recent(@RequestParam(defaultValue = "10") int limit) {
+        var userId = authenticatedUserId();
         var grpcRes = planStub.listRecentWorkoutSessions(
                 ListRecentWorkoutSessionsRequest.newBuilder().setUserId(userId).setLimit(limit).build()
         );
         var sessions = grpcRes.getSessionsList().stream().map(this::toWorkoutSessionDto).toList();
         return new RecentSessionsDto(sessions);
+    }
+
+    // ── Recommendations ───────────────────────────────────────────────────────
+
+    @PostMapping("/recommendations")
+    public RecommendDto recommend(@Valid @RequestBody RecommendRequestDto body) {
+        var userId = authenticatedUserId();
+        var grpcReq = RecommendRequest.newBuilder()
+                .setUserId(userId)
+                .setExerciseId(body.exerciseId())
+                .setRulesVersion(body.rulesVersion() == null ? "" : body.rulesVersion())
+                .setModalityKey(body.modalityKey() == null ? "" : body.modalityKey())
+                .build();
+
+        var grpcRes = planStub.recommend(grpcReq);
+        var sets = grpcRes.getSetsList().stream()
+                .map(s -> new PrescriptionSetDto(
+                        s.getExerciseId(),
+                        s.getOrder(),
+                        s.getPrescribedReps(),
+                        s.getPrescribedWeightKg(),
+                        s.getIsBackoff()))
+                .toList();
+
+        return new RecommendDto(sets);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Extracts the authenticated user's id from the JWT principal set by {@link com.spotme.adapters.in.rest.security.JwtAuthFilter}.
+     * This is always safe to call on protected routes; Spring Security guarantees the principal is set.
+     */
+    private String authenticatedUserId() {
+        return (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    }
+
+    /**
+     * Asserts that the path/query-param userId matches the JWT principal.
+     * Prevents a logged-in user from accessing another user's resources.
+     *
+     * @throws ResponseStatusException 403 if ownership check fails.
+     */
+    private void enforceOwnership(String resourceUserId) {
+        if (!authenticatedUserId().equals(resourceUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "You are not authorised to access resources belonging to another user");
+        }
     }
 
     private WorkoutSessionDto toWorkoutSessionDto(WorkoutSessionResponse s) {
@@ -179,22 +203,12 @@ public class PlanRestController {
         );
     }
 
-    public record StartWorkoutSessionRequestDto(@NotBlank String userId, String startedAt) {}
+    // ── DTOs ──────────────────────────────────────────────────────────────────
+
+    /** userId is omitted — derived from JWT on the server side. */
+    public record StartWorkoutSessionRequestDto(String startedAt) {}
     public record StartWorkoutSessionDto(String sessionId, String userId, String startedAt) {}
 
-    public record RegisterUserRequestDto(
-            @NotBlank String experienceLevel,
-            @NotBlank String trainingGoal,
-            @Min(1) @Max(24) int baselineSleepHours,
-            @Min(1) @Max(5) int stressSensitivity
-    ) {}
-    public record RegisterUserDto(
-            String userId,
-            String experienceLevel,
-            String trainingGoal,
-            int baselineSleepHours,
-            int stressSensitivity
-    ) {}
     public record UserProfileDto(
             String userId,
             String experienceLevel,
@@ -203,8 +217,8 @@ public class PlanRestController {
             int stressSensitivity
     ) {}
 
+    /** userId is omitted — derived from JWT on the server side. */
     public record LogSetRequestDto(
-            @NotBlank String userId,
             @NotBlank String exerciseId,
             @Positive int setNumber,
             @Positive int reps,
@@ -214,12 +228,13 @@ public class PlanRestController {
     ) {}
     public record LogSetDto(String sessionId, int totalSetsInSession) {}
 
-    public record RecommendRequestDto(@NotBlank String userId, @NotBlank String exerciseId, String rulesVersion, String modalityKey) {}
+    /** userId is omitted — derived from JWT on the server side. */
+    public record RecommendRequestDto(@NotBlank String exerciseId, String rulesVersion, String modalityKey) {}
     public record RecommendDto(List<PrescriptionSetDto> sets) {}
     public record PrescriptionSetDto(String exerciseId, int order, int prescribedReps, double prescribedWeightKg, boolean isBackoff) {}
 
+    /** userId is omitted — derived from JWT on the server side. */
     public record CompleteWorkoutRequestDto(
-            @NotBlank String userId,
             @NotBlank String finishedAt,
             @Positive int minTotalSets,
             @Positive int minDistinctExercises,

@@ -20,6 +20,10 @@ grpc:
     port: 9090
 
 spotme:
+  jwt:
+    secret: ${SPOTME_JWT_SECRET_BASE64}
+    access-token-ttl-minutes: ${SPOTME_JWT_ACCESS_TOKEN_TTL_MINUTES:15}
+    refresh-token-ttl-days: ${SPOTME_JWT_REFRESH_TOKEN_TTL_DAYS:7}
   grpc:
     client:
       host: localhost

@@ -1,218 +1,161 @@
-# 📘 SpotMe – Adaptive Hypertrophy Training App (Backend)
+# SpotMe Backend
 
-SpotMe is a beginner-friendly training companion designed to function as your **gym partner**, **progress tracker**, and **personal trainer**.  
-It uses modern hypertrophy principles and real-time user feedback (RPE, DOMS, sleep) to dynamically adjust training programs and provide personalised progression.
+SpotMe is an adaptive training backend built with Java 21, Spring Boot 3.4, gRPC, and PostgreSQL.
 
-This repository contains the **backend**, written in **Java**, following **Domain-Driven Design (DDD)** principles, with future support for both **gRPC** and **REST APIs**.  
-A React frontend will be developed in a separate project.
+The MVP flow currently supported is:
+1. register a user
+2. start a workout session
+3. log sets
+4. complete the session with recovery feedback (DOMS/sleep)
+5. get the next recommendation from the progression engine
 
----
+## Current Capabilities (MVP)
 
-## 🧱 Architecture Overview
+- Adaptive recommendation flow driven by `ProgressionEngine` in `domain/`.
+- User registration and profile retrieval.
+- Workout session lifecycle: start, log sets, complete, read latest/recent sessions.
+- Postgres-backed persistence adapters for users, sessions, sets, and stored prescriptions.
+- Flyway migrations for MVP schema and workout templates.
+- gRPC API as primary transport, with REST endpoints acting as a facade over gRPC.
+- End-to-end gRPC integration test for the adaptive flow in `app/src/test/java/com/spotme/AdaptiveTrainingFlowGrpcIntegrationTest.java`.
 
-The backend is structured around Domain-Driven Design with clear separation between **domain**, **application**, and **infrastructure** layers.
+## Architecture
 
+SpotMe uses a hexagonal, layered module layout:
 
-### **Domain Layer**
-The pure business logic of the application, independent of frameworks:
-
-- **Program Aggregate**  
-  Represents a user’s entire training program, composed of multiple blocks.
-
-- **TrainingBlock**  
-  Represents a phase of training (e.g., hypertrophy, strength, deload).  
-  Each block is typed using `BlockType` for clear periodisation.
-
-- **Workout Exercises**  
-  Represent exercises performed within a block or workout, using `Exercise` and `ExerciseSet`.
-
-- **Exercise Definitions**  
-  A static library of exercises including metadata like movement pattern and muscle groups.
-
-The distinction between **ExerciseDefinition** (what an exercise *is*) and **Exercise** (how it appears in a specific workout) supports flexible and adaptive programming.
-
-### **Application Layer (Planned)**
-Will contain use cases such as:
-
-- Creating programs
-- Generating adaptive training blocks
-- Updating workouts based on user feedback
-- Managing progression logic
-
-### **Infrastructure Layer (Planned)**
-Will include:
-
-- Repository implementations
-- Database integration
-- gRPC and REST controllers
-- Mappers and adapters
-
----
-
-###  **Project Structure**
 ```
-com.spotme
-├─ domain                                   # Core domain (pure Java, no frameworks)
-│  ├─ shared
-│  │  ├─ value                              # Generic value objects
-│  │  │  ├─ Name.java
-│  │  │  └─ Percentage.java
-│  │  ├─ id                                 # Strongly typed identifiers
-│  │  │  ├─ ProgramId.java
-│  │  │  ├─ BlockId.java
-│  │  │  ├─ ExerciseId.java
-│  │  │  ├─ UserId.java
-│  │  │  └─ FeedbackId.java
-│  │  └─ event                              # Domain events
-│  │     ├─ ProgramUpdated.java
-│  │     ├─ ExerciseCompleted.java
-│  │     └─ FeedbackProvided.java
-│  │
-│  ├─ program                                # Training program bounded context
-│  │  ├─ Program.java
-│  │  ├─ ProgramRepository.java               # Port
-│  │  ├─ block
-│  │  │  ├─ Block.java
-│  │  │  ├─ BlockType.java
-│  │  │  └─ BlockPolicy.java
-│  │  └─ policy
-│  │     └─ ProgressionPolicy.java
-│  │
-│  ├─ exercise                               # Exercises & definitions
-│  │  ├─ Exercise.java
-│  │  ├─ ExerciseDefinition.java
-│  │  ├─ ExerciseRepository.java              # Port
-│  │  └─ category
-│  │     ├─ MuscleGroup.java
-│  │     └─ EquipmentType.java
-│  │
-│  ├─ feedback                               # User feedback domain
-│  │  ├─ Feedback.java
-│  │  ├─ RpeValue.java
-│  │  ├─ DomsLevel.java
-│  │  └─ SleepQuality.java
-│  │
-│  └─ user                                   # User aggregate (athlete)
-│     ├─ User.java
-│     ├─ AthleteProfile.java
-│     └─ UserRepository.java                 # Port
-│
-├─ application                               # Use cases → orchestrate domain
-│  ├─ program
-│  │  ├─ CreateProgramUseCase.java
-│  │  ├─ UpdateProgramProgressUseCase.java
-│  │  └─ GenerateNextBlockUseCase.java
-│  ├─ exercise
-│  │  ├─ AddExerciseDefinitionUseCase.java
-│  │  └─ GetExerciseCatalogueUseCase.java
-│  ├─ feedback
-│  │  ├─ SubmitFeedbackUseCase.java
-│  │  └─ EvaluateFeedbackService.java
-│  └─ user
-│     └─ RegisterUserUseCase.java
-│
-├─ infrastructure                            # Adapters to technical concerns
-│  ├─ persistence
-│  │  ├─ jpa
-│  │  │  ├─ entities
-│  │  │  │  ├─ ProgramEntity.java
-│  │  │  │  ├─ BlockEntity.java
-│  │  │  │  ├─ ExerciseEntity.java
-│  │  │  │  └─ UserEntity.java
-│  │  │  ├─ converters
-│  │  │  │  └─ DomainIdConverters...
-│  │  │  ├─ repositories
-│  │  │  │  ├─ SpringDataProgramJpa.java
-│  │  │  │  ├─ SpringDataExerciseJpa.java
-│  │  │  │  └─ SpringDataUserJpa.java
-│  │  │  ├─ mappers
-│  │  │  │  ├─ ProgramMapper.java
-│  │  │  │  └─ ExerciseMapper.java
-│  │  │  └─ JpaProgramRepository.java        # Adapter implementing port
-│  │  └─ migrations
-│  │     └─ Flyway scripts...
-│  │
-│  ├─ messaging
-│  │  └─ events → Kafka/SQS adapters
-│  │
-│  └─ grpc / rest
-│     ├─ grpc
-│     │  └─ (gRPC service implementations)
-│     └─ rest
-│        └─ (Spring REST adapters)
-│
-├─ api                                       # Delivery layer (REST or gRPC)
-│  ├─ web
-│  │  ├─ controllers
-│  │  │  ├─ ProgramController.java
-│  │  │  ├─ ExerciseController.java
-│  │  │  └─ FeedbackController.java
-│  │  ├─ dto
-│  │  │  ├─ ProgramResponse.java
-│  │  │  ├─ ExerciseResponse.java
-│  │  │  └─ FeedbackRequest.java
-│  │  ├─ mappers
-│  │  │  ├─ ProgramDtoMapper.java
-│  │  │  └─ ExerciseDtoMapper.java
-│  │  └─ filters
-│  │     └─ LoggingFilter.java
-│  └─ config
-│     └─ ApiConfig.java
-│
-├─ support                                   # Cross-cutting utilities
-│  ├─ exceptions
-│  │  ├─ DomainException.java
-│  │  ├─ NotFoundException.java
-│  │  └─ ValidationException.java
-│  ├─ util
-│  │  └─ DomainUtils.java
-│  └─ logging
-│     └─ StructuredLogger.java
-│
-└─ bootstrap
-└─ Application.java                        # Spring Boot entry point
+domain -> application -> adapters -> app
 ```
 
-## 🎯 Core Concept
+- `domain/`: pure business logic, value objects, aggregates, ports, progression rules.
+- `application/`: use cases (`RegisterUser`, `StartWorkoutSession`, `LogSet`, `CompleteWorkoutSession`, `ComputeNextPrescription`, etc.).
+- `adapters/in.grpc/`: gRPC service implementation (`PlanGrpcService`).
+- `adapters/in.rest/`: REST controller (`PlanRestController`) that calls a gRPC stub.
+- `adapters/out.persistence/`: JPA entities/repositories and Postgres adapters.
+- `adapters/out.rules/`: classpath JSON rules loader (`rules/v1.0.0.json`).
+- `app/`: Spring Boot assembly and wiring.
 
-SpotMe adapts dynamically to the user’s real-world recovery and performance.  
-After each workout, users provide feedback:
+Modules are declared in the root `pom.xml`.
 
-- **RPE** (Rate of Perceived Exertion)
-- **DOMS** soreness
-- **Sleep quality**
+## Tech Stack
 
-This feedback influences adjustments to:
+- Java 21
+- Spring Boot 3.4.1
+- gRPC 1.66.0 + Protobuf 3.25.3
+- PostgreSQL + Spring Data JPA
+- Flyway migrations
+- MapStruct (persistence mapping)
+- JUnit 5 + Spring Boot Test + embedded Postgres (`io.zonky.test:embedded-postgres`)
 
-- Training volume
-- Intensity and load
-- RPE targets
-- Exercise selection
-- Block transitions
+## Running Locally
 
-The goal is to provide smarter progression than static templates.
+### Prerequisites
 
----
+- JDK 21
+- Maven wrapper (`mvnw` / `mvnw.cmd`)
+- PostgreSQL (or Docker)
 
-## 🚀 Current Status
+### Option A: Run with local Postgres
 
-- Domain model foundations established
-- ExerciseDefinition and Exercise aggregates implemented
-- Strongly-typed identifiers across the domain
-- Program → Block structure in place
-- Architecture prepared for future expansion (gRPC/REST/persistence)
+Set environment variables as needed (defaults shown in `app/src/main/resources/application.yaml`):
 
----
+- `SPRING_DATASOURCE_URL` (default `jdbc:postgresql://localhost:5432/spotme`)
+- `SPRING_DATASOURCE_USERNAME` (default `spotme`)
+- `SPRING_DATASOURCE_PASSWORD` (default `spotme`)
+- `SPRING_FLYWAY_ENABLED` (default `true`)
 
-## 🛠 Roadmap
+Build and run:
 
-- Implement Workout aggregate
-- Add UserFeedback models
-- Build adaptive progression engine
-- Implement Application layer use cases
-- Add gRPC APIs
-- Add REST APIs where appropriate
-- Implement persistence layer
-- Build React frontend
-- Add analytics, achievements, and social features
+```powershell
+.\mvnw.cmd clean install
+.\mvnw.cmd -pl app spring-boot:run
+```
+
+### Option B: Run with Docker Compose
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+Notes:
+- `docker-compose.yaml` exposes REST on `8080` and gRPC on `9090`.
+- `.env.example` currently sets `SPRING_FLYWAY_ENABLED=false`; enable it in `.env` if you want migrations applied automatically in Docker.
+
+## API Surfaces
+
+### gRPC (`PlanService`)
+
+Defined in `proto/src/main/proto/plan/v1/plan.proto`:
+
+- `RegisterUser`
+- `GetUserProfile`
+- `StartWorkoutSession`
+- `LogSet`
+- `CompleteWorkoutSession`
+- `Recommend`
+- `GetLatestWorkoutSession`
+- `ListRecentWorkoutSessions`
+
+Default gRPC server port: `9090` (`app/src/main/resources/application.yaml`).
+
+### REST facade
+
+Implemented in `adapters/in.rest/src/main/java/com/spotme/adapters/in/rest/PlanRestController.java`:
+
+- `POST /api/v1/users`
+- `GET /api/v1/users/{userId}`
+- `POST /api/v1/workout-sessions/start`
+- `POST /api/v1/workout-sessions/{sessionId}/sets`
+- `POST /api/v1/workout-sessions/{sessionId}/complete`
+- `POST /api/v1/recommendations`
+- `GET /api/v1/workout-sessions/latest?userId=...`
+- `GET /api/v1/workout-sessions/recent?userId=...&limit=...`
+
+## Database & Migrations
+
+Flyway scripts live in `adapters/out.persistence/src/main/resources/db/migration/`:
+
+- `V1__create_mvp_schema.sql`
+  - `users`
+  - `workout_sessions`
+  - `workout_sets`
+  - `prescriptions`
+- `V2__create_workout_templates.sql`
+  - `workouts`
+
+The app defaults to `spring.jpa.hibernate.ddl-auto=none` and relies on migrations/schema management.
+
+## Testing
+
+Run all tests:
+
+```powershell
+.\mvnw.cmd test
+```
+
+Run only the integration flow test in `app/`:
+
+```powershell
+.\mvnw.cmd -pl app -Dtest=AdaptiveTrainingFlowGrpcIntegrationTest test
+```
+
+The integration flow verifies register -> log workout -> complete -> recommend over gRPC with an embedded Postgres datasource.
+
+## Key Files
+
+- `domain/src/main/java/com/spotme/domain/rules/ProgressionEngine.java`
+- `application/src/main/java/com/spotme/application/usecase/ComputeNextPrescription.java`
+- `adapters/in.grpc/src/main/java/com/spotme/adapters/in/grpc/PlanGrpcService.java`
+- `adapters/in.rest/src/main/java/com/spotme/adapters/in/rest/PlanRestController.java`
+- `adapters/out.persistence/src/main/java/com/spotme/adapters/out/persistence/PostgresUserAdapter.java`
+- `adapters/out.persistence/src/main/java/com/spotme/adapters/out/persistence/PostgresWorkoutAdapter.java`
+- `app/src/main/java/com/spotme/config/UseCaseWiringConfig.java`
+
+## Near-Term Next Steps
+
+- Expand exercise/workout template CRUD use cases through gRPC.
+- Harden validation and error mapping across transports.
+- Add more integration tests for recent/latest session retrieval and error paths.
+- Wire cache adapter where it provides measurable value.
 

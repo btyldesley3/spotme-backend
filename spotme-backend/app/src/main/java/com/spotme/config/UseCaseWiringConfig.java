@@ -5,9 +5,15 @@ import com.spotme.application.usecase.ComputeNextPrescription;
 import com.spotme.application.usecase.GetUserProfile;
 import com.spotme.application.usecase.GetLatestWorkoutSession;
 import com.spotme.application.usecase.ListRecentWorkoutSessions;
+import com.spotme.application.usecase.LoginUser;
 import com.spotme.application.usecase.LogSet;
 import com.spotme.application.usecase.RegisterUser;
+import com.spotme.application.usecase.RegisterWithCredentials;
 import com.spotme.application.usecase.StartWorkoutSession;
+import com.spotme.domain.port.AlphaAccessPort;
+import com.spotme.domain.port.CredentialReadPort;
+import com.spotme.domain.port.CredentialWritePort;
+import com.spotme.domain.port.PasswordHashPort;
 import com.spotme.domain.port.RulesConfigPort;
 import com.spotme.domain.port.UserReadPort;
 import com.spotme.domain.port.UserWritePort;
@@ -63,6 +69,21 @@ public class UseCaseWiringConfig {
     @Bean
     public GetUserProfile getUserProfile(UserReadPort read) {
         return new GetUserProfile(read);
+    }
+
+    @Bean
+    public RegisterWithCredentials registerWithCredentials(UserWritePort userWrite,
+                                                           CredentialReadPort credentialRead,
+                                                           CredentialWritePort credentialWrite,
+                                                           AlphaAccessPort alphaAccess,
+                                                           PasswordHashPort passwordHash) {
+        return new RegisterWithCredentials(userWrite, credentialRead, credentialWrite, alphaAccess, passwordHash);
+    }
+
+    @Bean
+    public LoginUser loginUser(CredentialReadPort credentialRead,
+                               PasswordHashPort passwordHash) {
+        return new LoginUser(credentialRead, passwordHash);
     }
 }
 
