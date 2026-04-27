@@ -5,6 +5,7 @@ import com.spotme.proto.plan.v1.CompleteWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.GetUserProfileRequest;
 import com.spotme.proto.plan.v1.LogSetRequest;
 import com.spotme.proto.plan.v1.PlanServiceGrpc;
+import com.spotme.proto.plan.v1.RegisterUserRequest;
 import com.spotme.proto.plan.v1.RecommendRequest;
 import com.spotme.proto.plan.v1.StartWorkoutSessionRequest;
 import io.grpc.ManagedChannel;
@@ -209,6 +210,48 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
                         .build())
         );
         assertEquals(Status.Code.UNAUTHENTICATED, ex.getStatus().getCode());
+    }
+
+    @Test
+    void registerUserOverGrpcIsRejectedEvenWithJwt() {
+        assertTrue(grpcPortHolder.get() > 0, "Expected gRPC server port to be captured after startup");
+        channel = ManagedChannelBuilder.forAddress("localhost", grpcPortHolder.get())
+                .usePlaintext()
+                .build();
+        var unauthenticatedStub = PlanServiceGrpc.newBlockingStub(channel);
+
+        var registerReq = Map.of(
+                "email", "grpc-alpha@spotme.dev",
+                "password", "Password123!",
+                "experienceLevel", "beginner",
+                "trainingGoal", "strength",
+                "baselineSleepHours", 7,
+                "stressSensitivity", 3
+        );
+        ResponseEntity<Map> registerRes = rest.postForEntity("/api/auth/register", registerReq, Map.class);
+        assertEquals(HttpStatus.CREATED, registerRes.getStatusCode());
+
+        var loginReq = Map.of("email", "grpc-alpha@spotme.dev", "password", "Password123!");
+        ResponseEntity<Map> loginRes = rest.postForEntity("/api/auth/login", loginReq, Map.class);
+        assertEquals(HttpStatus.OK, loginRes.getStatusCode());
+        assertNotNull(loginRes.getBody());
+        var accessToken = (String) loginRes.getBody().get("accessToken");
+        assertNotNull(accessToken);
+
+        var headers = new Metadata();
+        headers.put(AUTHORIZATION_HEADER, "Bearer " + accessToken);
+        var stub = unauthenticatedStub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
+
+        var ex = org.junit.jupiter.api.Assertions.assertThrows(
+                StatusRuntimeException.class,
+                () -> stub.registerUser(RegisterUserRequest.newBuilder()
+                        .setExperienceLevel("beginner")
+                        .setTrainingGoal("strength")
+                        .setBaselineSleepHours(7)
+                        .setStressSensitivity(3)
+                        .build())
+        );
+        assertEquals(Status.Code.PERMISSION_DENIED, ex.getStatus().getCode());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

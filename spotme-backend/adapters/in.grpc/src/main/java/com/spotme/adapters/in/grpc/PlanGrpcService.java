@@ -6,7 +6,6 @@ import com.spotme.application.usecase.GetUserProfile;
 import com.spotme.application.usecase.GetLatestWorkoutSession;
 import com.spotme.application.usecase.ListRecentWorkoutSessions;
 import com.spotme.application.usecase.LogSet;
-import com.spotme.application.usecase.RegisterUser;
 import com.spotme.application.usecase.StartWorkoutSession;
 import com.spotme.domain.model.workout.WorkoutSessionSummary;
 import com.spotme.proto.plan.v1.CompleteWorkoutSessionRequest;
@@ -42,7 +41,6 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
     private final ListRecentWorkoutSessions listRecentWorkoutSessions;
     private final StartWorkoutSession startWorkoutSession;
     private final LogSet logSet;
-    private final RegisterUser registerUser;
     private final GetUserProfile getUserProfile;
 
     public PlanGrpcService(ComputeNextPrescription useCase,
@@ -51,7 +49,7 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
                            ListRecentWorkoutSessions listRecentWorkoutSessions,
                            StartWorkoutSession startWorkoutSession,
                            LogSet logSet) {
-        this(useCase, completeWorkoutSession, getLatestWorkoutSession, listRecentWorkoutSessions, startWorkoutSession, logSet, null, null);
+        this(useCase, completeWorkoutSession, getLatestWorkoutSession, listRecentWorkoutSessions, startWorkoutSession, logSet, null);
     }
 
     @Autowired
@@ -61,7 +59,6 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
                            ListRecentWorkoutSessions listRecentWorkoutSessions,
                            StartWorkoutSession startWorkoutSession,
                            LogSet logSet,
-                           RegisterUser registerUser,
                            GetUserProfile getUserProfile) {
         this.useCase = useCase;
         this.completeWorkoutSession = completeWorkoutSession;
@@ -69,31 +66,15 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
         this.listRecentWorkoutSessions = listRecentWorkoutSessions;
         this.startWorkoutSession = startWorkoutSession;
         this.logSet = logSet;
-        this.registerUser = registerUser;
         this.getUserProfile = getUserProfile;
     }
 
     @Override
     public void registerUser(RegisterUserRequest request,
                              io.grpc.stub.StreamObserver<RegisterUserResponse> resp) {
-        try {
-            var result = registerUser.handle(new RegisterUser.Command(
-                    request.getExperienceLevel(),
-                    request.getTrainingGoal(),
-                    request.getBaselineSleepHours(),
-                    request.getStressSensitivity()
-            ));
-            resp.onNext(RegisterUserResponse.newBuilder()
-                    .setUserId(result.userId().toString())
-                    .setExperienceLevel(result.experienceLevel().name())
-                    .setTrainingGoal(result.trainingGoal().name())
-                    .setBaselineSleepHours(result.baselineSleepHours())
-                    .setStressSensitivity(result.stressSensitivity())
-                    .build());
-            resp.onCompleted();
-        } catch (IllegalArgumentException e) {
-            resp.onError(Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException());
-        }
+        resp.onError(Status.PERMISSION_DENIED
+                .withDescription("RegisterUser over gRPC is disabled for alpha. Use REST /api/auth/register.")
+                .asRuntimeException());
     }
 
     @Override

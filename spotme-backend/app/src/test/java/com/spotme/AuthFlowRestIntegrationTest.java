@@ -20,6 +20,12 @@ import org.springframework.test.context.ActiveProfiles;
 
 import javax.sql.DataSource;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,6 +45,14 @@ class AuthFlowRestIntegrationTest {
 
     /** A stable UUID used as an exercise identifier across workout-flow tests. */
     private static final String EXERCISE_ID = "11111111-1111-1111-1111-111111111111";
+    private static final String ALLOWLIST_EMAIL_1 = "alpha-tester@spotme.dev";
+    private static final String ALLOWLIST_EMAIL_2 = "alpha-tester2@spotme.dev";
+    private static final String INVITE_ONLY_EMAIL_1 = "invite-only-1@spotme.dev";
+    private static final String INVITE_ONLY_EMAIL_2 = "invite-only-2@spotme.dev";
+    private static final UUID ALLOWLIST_ID_1 = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1");
+    private static final UUID ALLOWLIST_ID_2 = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2");
+    private static final UUID INVITE_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static final String INVITE_CODE = "ALPHA-INVITE-ONE";
 
     private static final EmbeddedPostgres POSTGRES = startEmbeddedPostgres();
 
@@ -50,19 +64,28 @@ class AuthFlowRestIntegrationTest {
 
     @BeforeEach
     void setUpAllowlist() {
-        jdbc.update("delete from alpha_email_allowlist where email in (?, ?)",
-                "alpha-tester@spotme.dev", "alpha-tester2@spotme.dev");
+        jdbc.update("delete from user_credentials where email in (?, ?, ?, ?)",
+                ALLOWLIST_EMAIL_1, ALLOWLIST_EMAIL_2, INVITE_ONLY_EMAIL_1, INVITE_ONLY_EMAIL_2);
+
         jdbc.update(
-                "insert into alpha_email_allowlist (id, email, active, notes, created_at) values (?, ?, true, ?, now())",
-                UUID.randomUUID(), "alpha-tester@spotme.dev", "integration-test"
+                "insert into alpha_email_allowlist (id, email, active, notes, created_at) values (?, ?, true, ?, now()) " +
+                        "on conflict (email) do update set active = excluded.active, notes = excluded.notes",
+                ALLOWLIST_ID_1, ALLOWLIST_EMAIL_1, "integration-test"
         );
         jdbc.update(
-                "insert into alpha_email_allowlist (id, email, active, notes, created_at) values (?, ?, true, ?, now())",
-                UUID.randomUUID(), "alpha-tester2@spotme.dev", "integration-test-user2"
+                "insert into alpha_email_allowlist (id, email, active, notes, created_at) values (?, ?, true, ?, now()) " +
+                        "on conflict (email) do update set active = excluded.active, notes = excluded.notes",
+                ALLOWLIST_ID_2, ALLOWLIST_EMAIL_2, "integration-test-user2"
         );
-        // Clean up any credentials from prior runs so tests are idempotent
-        jdbc.update("delete from user_credentials where email in (?, ?)",
-                "alpha-tester@spotme.dev", "alpha-tester2@spotme.dev");
+
+        jdbc.update("delete from alpha_invite_codes where id = ?", INVITE_ID);
+        jdbc.update(
+                "insert into alpha_invite_codes (id, code_hash, active, max_uses, used_count, expires_at, created_at) " +
+                        "values (?, ?, true, 1, 0, ?, now())",
+                INVITE_ID,
+                sha256(INVITE_CODE),
+                Timestamp.from(Instant.now().plusSeconds(3600))
+        );
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -112,11 +135,29 @@ class AuthFlowRestIntegrationTest {
         return new HttpEntity<>(body, bearerHeaders(token));
     }
 
+    private String alphaAccessPathForEmail(String email) {
+        return jdbc.queryForObject(
+                "select alpha_access_path from user_credentials where email = ?",
+                String.class,
+                email
+        );
+    }
+
+    private static String sha256(String rawValue) {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            var bytes = digest.digest(rawValue.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(bytes);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     @Test
     void alphaAllowlistedUserCanRegisterLoginAndCallProtectedEndpoint() {
-        var auth = registerAndLogin("alpha-tester@spotme.dev");
+        var auth = registerAndLogin(ALLOWLIST_EMAIL_1);
 
         assertNotNull(auth.userId());
         assertNotNull(auth.accessToken());
@@ -130,6 +171,7 @@ class AuthFlowRestIntegrationTest {
         ResponseEntity<Map> userRes = rest.exchange("/api/v1/users/" + auth.userId(), HttpMethod.GET, authReq, Map.class);
         assertEquals(HttpStatus.OK, userRes.getStatusCode());
         assertEquals(auth.userId(), userRes.getBody().get("userId"));
+        assertEquals("EMAIL_ALLOWLIST", alphaAccessPathForEmail(ALLOWLIST_EMAIL_1));
     }
 
     @Test
@@ -149,9 +191,45 @@ class AuthFlowRestIntegrationTest {
     }
 
     @Test
+    void inviteCodeAllowsRegistrationAndSingleUseCodeIsConsumed() {
+        var registerReq = Map.of(
+                "email", INVITE_ONLY_EMAIL_1,
+                "password", "Password123!",
+                "experienceLevel", "beginner",
+                "trainingGoal", "strength",
+                "baselineSleepHours", 7,
+                "stressSensitivity", 3,
+                "inviteCode", INVITE_CODE
+        );
+
+        ResponseEntity<Map> registerRes = rest.postForEntity("/api/auth/register", registerReq, Map.class);
+        assertEquals(HttpStatus.CREATED, registerRes.getStatusCode());
+        assertEquals("INVITE_CODE", alphaAccessPathForEmail(INVITE_ONLY_EMAIL_1));
+
+        Integer usedCount = jdbc.queryForObject(
+                "select used_count from alpha_invite_codes where id = ?",
+                Integer.class,
+                INVITE_ID
+        );
+        assertEquals(1, usedCount);
+
+        var secondAttemptReq = Map.of(
+                "email", INVITE_ONLY_EMAIL_2,
+                "password", "Password123!",
+                "experienceLevel", "beginner",
+                "trainingGoal", "strength",
+                "baselineSleepHours", 7,
+                "stressSensitivity", 3,
+                "inviteCode", INVITE_CODE
+        );
+        ResponseEntity<Map> secondAttemptRes = rest.postForEntity("/api/auth/register", secondAttemptReq, Map.class);
+        assertEquals(HttpStatus.FORBIDDEN, secondAttemptRes.getStatusCode());
+    }
+
+    @Test
     void crossUserSpoofingIsForbidden() {
-        var user1 = registerAndLogin("alpha-tester@spotme.dev");
-        var user2 = registerAndLogin("alpha-tester2@spotme.dev");
+        var user1 = registerAndLogin(ALLOWLIST_EMAIL_1);
+        var user2 = registerAndLogin(ALLOWLIST_EMAIL_2);
 
         // user2 can access their own profile
         ResponseEntity<Map> ownProfile = rest.exchange(
@@ -174,7 +252,7 @@ class AuthFlowRestIntegrationTest {
 
     @Test
     void logoutRevokesRefreshToken() {
-        var auth = registerAndLogin("alpha-tester@spotme.dev");
+        var auth = registerAndLogin(ALLOWLIST_EMAIL_1);
 
         // Logout — revokes all refresh tokens server-side
         var logoutRes = rest.exchange("/api/auth/logout", HttpMethod.POST,
@@ -189,7 +267,7 @@ class AuthFlowRestIntegrationTest {
 
     @Test
     void logoutAllRevokesRefreshToken() {
-        var auth = registerAndLogin("alpha-tester@spotme.dev");
+        var auth = registerAndLogin(ALLOWLIST_EMAIL_1);
 
         // Logout-all — explicit endpoint for revoking all refresh tokens for the current user
         var logoutAllRes = rest.exchange("/api/auth/logout-all", HttpMethod.POST,
@@ -211,7 +289,7 @@ class AuthFlowRestIntegrationTest {
     @Test
     @SuppressWarnings("unchecked")
     void fullAuthenticatedWorkoutFlowFromRegisterToRecommendation() {
-        var auth = registerAndLogin("alpha-tester@spotme.dev");
+        var auth = registerAndLogin(ALLOWLIST_EMAIL_1);
         var token = auth.accessToken();
 
         // 1. Start a workout session (body is optional — startedAt can be omitted)

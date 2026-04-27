@@ -25,9 +25,6 @@ import java.lang.reflect.Method;
 @GrpcGlobalServerInterceptor
 public class GrpcJwtAuthInterceptor implements ServerInterceptor {
 
-    private static final String PLAN_SERVICE_PREFIX = "com.spotme.proto.plan.v1.PlanService/";
-    private static final String REGISTER_USER_METHOD = PLAN_SERVICE_PREFIX + "RegisterUser";
-
     private static final Metadata.Key<String> AUTHORIZATION_HEADER =
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
 
@@ -91,9 +88,6 @@ public class GrpcJwtAuthInterceptor implements ServerInterceptor {
     }
 
     private boolean requiresAuthentication(String fullMethodName) {
-        if (REGISTER_USER_METHOD.equals(fullMethodName)) {
-            return false;
-        }
         if (fullMethodName.startsWith("grpc.health.v1.Health/")) {
             return false;
         }
