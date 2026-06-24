@@ -2,129 +2,69 @@
 
 SpotMe is an adaptive training backend built with Java 21, Spring Boot 3.4, gRPC, and PostgreSQL.
 
-The MVP flow currently supported is:
-1. register a user
-2. start a workout session
-3. log sets
-4. complete the session with recovery feedback (DOMS/sleep)
-5. get the next recommendation from the progression engine
+The backend is now fully gRPC-native for MVP delivery. Both authentication and training workflows are exposed through protobuf contracts and gRPC services.
 
-## Current Capabilities (MVP)
+## MVP Flow
 
-- Adaptive recommendation flow driven by `ProgressionEngine` in `domain/`.
-- User registration and profile retrieval.
-- Workout session lifecycle: start, log sets, complete, read latest/recent sessions.
-- Postgres-backed persistence adapters for users, sessions, sets, and stored prescriptions.
-- Flyway migrations for MVP schema and workout templates.
-- gRPC API as primary transport, with REST endpoints acting as a facade over gRPC.
-- End-to-end gRPC integration test for the adaptive flow in `app/src/test/java/com/spotme/AdaptiveTrainingFlowGrpcIntegrationTest.java`.
+1. Register credentials (`AuthService/RegisterCredentials`)
+2. Login (`AuthService/Login`) and receive JWT access + refresh tokens
+3. Start a workout session (`PlanService/StartWorkoutSession`)
+4. Log sets (`PlanService/LogSet`)
+5. Complete session with recovery feedback (`PlanService/CompleteWorkoutSession`)
+6. Request the next recommendation (`PlanService/Recommend`)
+7. Read latest/recent sessions (`PlanService/GetLatestWorkoutSession`, `PlanService/ListRecentWorkoutSessions`)
 
 ## Architecture
 
-SpotMe uses a hexagonal, layered module layout:
+SpotMe uses a hexagonal module layout with strict dependency flow:
 
-```
+```text
 domain -> application -> adapters -> app
 ```
 
-- `domain/`: pure business logic, value objects, aggregates, ports, progression rules.
-- `application/`: use cases (`RegisterUser`, `StartWorkoutSession`, `LogSet`, `CompleteWorkoutSession`, `ComputeNextPrescription`, etc.).
-- `adapters/in.grpc/`: gRPC service implementation (`PlanGrpcService`).
-- `adapters/in.rest/`: REST controller (`PlanRestController`) that calls a gRPC stub.
-- `adapters/out.persistence/`: JPA entities/repositories and Postgres adapters.
-- `adapters/out.rules/`: classpath JSON rules loader (`rules/v1.0.0.json`).
-- `app/`: Spring Boot assembly and wiring.
+- `domain/`: core business model, rules, value objects, and ports
+- `application/`: use cases orchestrating domain behavior
+- `proto/`: protobuf contracts and generated Java stubs
+- `adapters/in.grpc/`: inbound gRPC services (`AuthGrpcService`, `PlanGrpcService`)
+- `adapters/out.persistence/`: Postgres adapters and JPA repositories
+- `adapters/out.rules/`: rules policy loading from classpath JSON
+- `adapters/out.cache/`: cache adapter module (optional)
+- `app/`: Spring Boot assembly and runtime wiring
 
-Modules are declared in the root `pom.xml`.
+## API Contracts
 
-## Tech Stack
+Protos are defined in:
 
-- Java 21
-- Spring Boot 3.4.1
-- gRPC 1.66.0 + Protobuf 3.25.3
-- PostgreSQL + Spring Data JPA
-- Flyway migrations
-- MapStruct (persistence mapping)
-- JUnit 5 + Spring Boot Test + embedded Postgres (`io.zonky.test:embedded-postgres`)
+- `proto/src/main/proto/plan/v1/plan.proto`
+
+Services:
+
+- `AuthService`: register, login, refresh, logout, logout-all
+- `PlanService`: workout lifecycle + recommendations + profile/session reads
 
 ## Running Locally
 
 ### Prerequisites
 
 - JDK 21
-- Maven wrapper (`mvnw` / `mvnw.cmd`)
-- PostgreSQL (or Docker)
+- Docker (optional, for local infra)
 
-### Option A: Run with local Postgres
-
-Set environment variables as needed (defaults shown in `app/src/main/resources/application.yaml`):
-
-- `SPRING_DATASOURCE_URL` (default `jdbc:postgresql://localhost:5432/spotme`)
-- `SPRING_DATASOURCE_USERNAME` (default `spotme`)
-- `SPRING_DATASOURCE_PASSWORD` (default `spotme`)
-- `SPRING_FLYWAY_ENABLED` (default `true`)
-
-Build and run:
+### Build
 
 ```powershell
 .\mvnw.cmd clean install
+```
+
+### Run app module
+
+```powershell
 .\mvnw.cmd -pl app spring-boot:run
 ```
 
-### Option B: Run with Docker Compose
+Default ports/config:
 
-```powershell
-Copy-Item .env.example .env
-docker compose up --build
-```
-
-Notes:
-- `docker-compose.yaml` exposes REST on `8080` and gRPC on `9090`.
-- `.env.example` currently sets `SPRING_FLYWAY_ENABLED=false`; enable it in `.env` if you want migrations applied automatically in Docker.
-
-## API Surfaces
-
-### gRPC (`PlanService`)
-
-Defined in `proto/src/main/proto/plan/v1/plan.proto`:
-
-- `RegisterUser`
-- `GetUserProfile`
-- `StartWorkoutSession`
-- `LogSet`
-- `CompleteWorkoutSession`
-- `Recommend`
-- `GetLatestWorkoutSession`
-- `ListRecentWorkoutSessions`
-
-Default gRPC server port: `9090` (`app/src/main/resources/application.yaml`).
-
-### REST facade
-
-Implemented in `adapters/in.rest/src/main/java/com/spotme/adapters/in/rest/PlanRestController.java`:
-
-- `POST /api/v1/users`
-- `GET /api/v1/users/{userId}`
-- `POST /api/v1/workout-sessions/start`
-- `POST /api/v1/workout-sessions/{sessionId}/sets`
-- `POST /api/v1/workout-sessions/{sessionId}/complete`
-- `POST /api/v1/recommendations`
-- `GET /api/v1/workout-sessions/latest?userId=...`
-- `GET /api/v1/workout-sessions/recent?userId=...&limit=...`
-
-## Database & Migrations
-
-Flyway scripts live in `adapters/out.persistence/src/main/resources/db/migration/`:
-
-- `V1__create_mvp_schema.sql`
-  - `users`
-  - `workout_sessions`
-  - `workout_sets`
-  - `prescriptions`
-- `V2__create_workout_templates.sql`
-  - `workouts`
-
-The app defaults to `spring.jpa.hibernate.ddl-auto=none` and relies on migrations/schema management.
+- gRPC server: `9090` (see `app/src/main/resources/application.yaml`)
+- JWT secret: `SPOTME_JWT_SECRET_BASE64` (required outside `test` profile)
 
 ## Testing
 
@@ -134,28 +74,33 @@ Run all tests:
 .\mvnw.cmd test
 ```
 
-Run only the integration flow test in `app/`:
+Run core gRPC integration flow:
 
 ```powershell
 .\mvnw.cmd -pl app -Dtest=AdaptiveTrainingFlowGrpcIntegrationTest test
 ```
 
-The integration flow verifies register -> log workout -> complete -> recommend over gRPC with an embedded Postgres datasource.
+## Docker
+
+`docker-compose.yaml` runs:
+
+- `postgres` on `5432`
+- `spotme-api` gRPC on `9090`
+
+See `DOCKER_LOCAL.md` for full local Docker workflow.
 
 ## Key Files
 
-- `domain/src/main/java/com/spotme/domain/rules/ProgressionEngine.java`
-- `application/src/main/java/com/spotme/application/usecase/ComputeNextPrescription.java`
-- `adapters/in.grpc/src/main/java/com/spotme/adapters/in/grpc/PlanGrpcService.java`
-- `adapters/in.rest/src/main/java/com/spotme/adapters/in/rest/PlanRestController.java`
-- `adapters/out.persistence/src/main/java/com/spotme/adapters/out/persistence/PostgresUserAdapter.java`
-- `adapters/out.persistence/src/main/java/com/spotme/adapters/out/persistence/PostgresWorkoutAdapter.java`
+- `app/src/main/java/com/spotme/SpotMeApplication.java`
 - `app/src/main/java/com/spotme/config/UseCaseWiringConfig.java`
+- `adapters/in.grpc/src/main/java/com/spotme/adapters/in/grpc/AuthGrpcService.java`
+- `adapters/in.grpc/src/main/java/com/spotme/adapters/in/grpc/PlanGrpcService.java`
+- `adapters/in.grpc/src/main/java/com/spotme/adapters/in/grpc/GrpcJwtAuthInterceptor.java`
+- `domain/src/main/java/com/spotme/domain/rules/ProgressionEngine.java`
 
-## Near-Term Next Steps
+## Status
 
-- Expand exercise/workout template CRUD use cases through gRPC.
-- Harden validation and error mapping across transports.
-- Add more integration tests for recent/latest session retrieval and error paths.
-- Wire cache adapter where it provides measurable value.
-
+- gRPC-native auth and training flows are implemented
+- Postgres persistence and Flyway migrations are active
+- Domain progression engine is integrated through `ComputeNextPrescription`
+- Integration test coverage includes authenticated gRPC happy-path scenarios

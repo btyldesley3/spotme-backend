@@ -1,4 +1,4 @@
-package com.spotme.adapters.in.rest.security;
+package com.spotme.adapters.in.grpc;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -18,17 +18,16 @@ import java.util.HexFormat;
 import java.util.UUID;
 
 /**
- * Generates and validates JWT access tokens, and manages opaque refresh token values.
- * Kept in the REST adapter layer — JWT is a transport-layer concern, not domain.
+ * gRPC transport-level token service used by auth endpoints and gRPC interceptors.
  */
 @Service
-public class JwtService {
+public class JwtTokenService {
 
     private final SecretKey signingKey;
     private final long accessTokenTtlMinutes;
     private final long refreshTokenTtlDays;
 
-    public JwtService(
+    public JwtTokenService(
             @Value("${spotme.jwt.secret}") String secret,
             @Value("${spotme.jwt.access-token-ttl-minutes:15}") long accessTokenTtlMinutes,
             @Value("${spotme.jwt.refresh-token-ttl-days:7}") long refreshTokenTtlDays
@@ -46,13 +45,11 @@ public class JwtService {
             throw new IllegalStateException("spotme.jwt.secret must decode to at least 32 bytes (256-bit key)");
         }
 
-        // Derive a consistent HMAC key from the configured secret bytes.
         this.signingKey = Keys.hmacShaKeyFor(keyBytes);
         this.accessTokenTtlMinutes = accessTokenTtlMinutes;
         this.refreshTokenTtlDays = refreshTokenTtlDays;
     }
 
-    /** Generates a short-lived JWT access token. */
     public String generateAccessToken(String userId, String email) {
         var now = Instant.now();
         return Jwts.builder()
@@ -64,17 +61,14 @@ public class JwtService {
                 .compact();
     }
 
-    /** Generates a random opaque refresh token value (UUID). */
     public String generateRefreshTokenValue() {
         return UUID.randomUUID().toString();
     }
 
-    /** Returns the TTL for refresh tokens so callers can compute expiry. */
     public Instant refreshTokenExpiry() {
         return Instant.now().plusSeconds(refreshTokenTtlDays * 86_400);
     }
 
-    /** SHA-256 hash of a token value — safe for DB storage. */
     public String hashToken(String rawToken) {
         try {
             var digest = MessageDigest.getInstance("SHA-256");
@@ -85,10 +79,6 @@ public class JwtService {
         }
     }
 
-    /**
-     * Validates an access token and returns its claims.
-     * @throws JwtException if the token is invalid or expired.
-     */
     public Claims validateAccessToken(String token) throws JwtException {
         return Jwts.parser()
                 .verifyWith(signingKey)

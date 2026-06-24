@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package com.spotme.proto.plan.v1;
 
+import "google/protobuf/empty.proto";
+
 option java_package = "com.spotme.proto.plan.v1";
 option java_outer_classname = "PlanProto";
 option java_multiple_files = true;
@@ -16,6 +18,43 @@ service PlanService {
   rpc CompleteWorkoutSession (CompleteWorkoutSessionRequest) returns (CompleteWorkoutSessionResponse);
   rpc GetLatestWorkoutSession (GetLatestWorkoutSessionRequest) returns (WorkoutSessionResponse);
   rpc ListRecentWorkoutSessions (ListRecentWorkoutSessionsRequest) returns (ListWorkoutSessionsResponse);
+}
+
+service AuthService {
+  rpc RegisterCredentials (RegisterCredentialsRequest) returns (RegisterCredentialsResponse);
+  rpc Login (LoginRequest) returns (AuthTokensResponse);
+  rpc RefreshToken (RefreshTokenRequest) returns (AuthTokensResponse);
+  rpc Logout (google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc LogoutAll (google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+message RegisterCredentialsRequest {
+  string email = 1;
+  string password = 2;
+  string invite_code = 3;
+  string experience_level = 4;
+  string training_goal = 5;
+  int32 baseline_sleep_hours = 6;
+  int32 stress_sensitivity = 7;
+}
+
+message RegisterCredentialsResponse {
+  string user_id = 1;
+  string email = 2;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message AuthTokensResponse {
+  string access_token = 1;
+  string refresh_token = 2;
 }
 
 // Register a new user profile used by workout and recommendation flows.

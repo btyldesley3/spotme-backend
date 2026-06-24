@@ -73,7 +73,7 @@ public class PlanGrpcService extends PlanServiceGrpc.PlanServiceImplBase {
     public void registerUser(RegisterUserRequest request,
                              io.grpc.stub.StreamObserver<RegisterUserResponse> resp) {
         resp.onError(Status.PERMISSION_DENIED
-                .withDescription("RegisterUser over gRPC is disabled for alpha. Use REST /api/auth/register.")
+                .withDescription("RegisterUser is deprecated. Use AuthService/RegisterCredentials.")
                 .asRuntimeException());
     }
 

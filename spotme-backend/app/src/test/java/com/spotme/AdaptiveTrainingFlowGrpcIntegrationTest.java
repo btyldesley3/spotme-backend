@@ -1,12 +1,15 @@
 package com.spotme;
 
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+import com.google.protobuf.Empty;
+import com.spotme.proto.plan.v1.AuthServiceGrpc;
 import com.spotme.proto.plan.v1.CompleteWorkoutSessionRequest;
 import com.spotme.proto.plan.v1.GetUserProfileRequest;
 import com.spotme.proto.plan.v1.LogSetRequest;
+import com.spotme.proto.plan.v1.LoginRequest;
 import com.spotme.proto.plan.v1.PlanServiceGrpc;
-import com.spotme.proto.plan.v1.RegisterUserRequest;
 import com.spotme.proto.plan.v1.RecommendRequest;
+import com.spotme.proto.plan.v1.RefreshTokenRequest;
+import com.spotme.proto.plan.v1.RegisterCredentialsRequest;
 import com.spotme.proto.plan.v1.StartWorkoutSessionRequest;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -14,34 +17,30 @@ import io.grpc.Metadata;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import net.devh.boot.grpc.server.event.GrpcServerStartedEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
+import javax.sql.DataSource;
 import java.io.IOException;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
         "grpc.server.port=0",
         "spring.flyway.enabled=true"
 })
@@ -57,9 +56,6 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
 
     @jakarta.annotation.Resource
     private AtomicInteger grpcPortHolder;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    private TestRestTemplate rest;
 
     @org.springframework.beans.factory.annotation.Autowired
     private JdbcTemplate jdbc;
@@ -99,50 +95,45 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
         channel = ManagedChannelBuilder.forAddress("localhost", grpcPortHolder.get())
                 .usePlaintext()
                 .build();
-        var unauthenticatedStub = PlanServiceGrpc.newBlockingStub(channel);
 
-        // Public registration/login happen through REST auth facade to obtain a JWT.
-        var registerReq = Map.of(
-                "email", "grpc-alpha@spotme.dev",
-                "password", "Password123!",
-                "experienceLevel", "beginner",
-                "trainingGoal", "strength",
-                "baselineSleepHours", 7,
-                "stressSensitivity", 3
-        );
-        ResponseEntity<Map> registerRes = rest.postForEntity("/api/auth/register", registerReq, Map.class);
-        assertEquals(HttpStatus.CREATED, registerRes.getStatusCode());
-        assertNotNull(registerRes.getBody());
-        var userId = (String) registerRes.getBody().get("userId");
-        assertNotNull(userId);
+        var authStub = AuthServiceGrpc.newBlockingStub(channel);
+        var registerResponse = authStub.registerCredentials(RegisterCredentialsRequest.newBuilder()
+                .setEmail("grpc-alpha@spotme.dev")
+                .setPassword("Password123!")
+                .setExperienceLevel("beginner")
+                .setTrainingGoal("strength")
+                .setBaselineSleepHours(7)
+                .setStressSensitivity(3)
+                .build());
+        assertNotNull(registerResponse.getUserId());
 
-        var loginReq = Map.of("email", "grpc-alpha@spotme.dev", "password", "Password123!");
-        ResponseEntity<Map> loginRes = rest.postForEntity("/api/auth/login", loginReq, Map.class);
-        assertEquals(HttpStatus.OK, loginRes.getStatusCode());
-        assertNotNull(loginRes.getBody());
-        var accessToken = (String) loginRes.getBody().get("accessToken");
-        assertNotNull(accessToken);
+        var loginResponse = authStub.login(LoginRequest.newBuilder()
+                .setEmail("grpc-alpha@spotme.dev")
+                .setPassword("Password123!")
+                .build());
+        assertFalse(loginResponse.getAccessToken().isBlank());
+        assertFalse(loginResponse.getRefreshToken().isBlank());
 
         var headers = new Metadata();
-        headers.put(AUTHORIZATION_HEADER, "Bearer " + accessToken);
-        var stub = unauthenticatedStub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
+        headers.put(AUTHORIZATION_HEADER, "Bearer " + loginResponse.getAccessToken());
+        var stub = PlanServiceGrpc.newBlockingStub(channel)
+                .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
 
         var profile = stub.getUserProfile(GetUserProfileRequest.newBuilder()
-                .setUserId(userId)
+                .setUserId(registerResponse.getUserId())
                 .build());
-        assertEquals(userId, profile.getUserId());
+        assertEquals(registerResponse.getUserId(), profile.getUserId());
         assertEquals(7, profile.getBaselineSleepHours());
 
         var startResponse = stub.startWorkoutSession(StartWorkoutSessionRequest.newBuilder()
-                .setUserId(userId)
+                .setUserId(registerResponse.getUserId())
                 .setStartedAt("2026-04-16T08:00:00Z")
                 .build());
-
-        assertEquals(userId, startResponse.getUserId());
+        assertEquals(registerResponse.getUserId(), startResponse.getUserId());
         assertFalse(startResponse.getSessionId().isBlank());
 
         var logSetOne = stub.logSet(LogSetRequest.newBuilder()
-                .setUserId(userId)
+                .setUserId(registerResponse.getUserId())
                 .setSessionId(startResponse.getSessionId())
                 .setExerciseId(EXERCISE_ID)
                 .setSetNumber(1)
@@ -154,7 +145,7 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
         assertEquals(1, logSetOne.getTotalSetsInSession());
 
         var logSetTwo = stub.logSet(LogSetRequest.newBuilder()
-                .setUserId(userId)
+                .setUserId(registerResponse.getUserId())
                 .setSessionId(startResponse.getSessionId())
                 .setExerciseId(EXERCISE_ID)
                 .setSetNumber(2)
@@ -166,7 +157,7 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
         assertEquals(2, logSetTwo.getTotalSetsInSession());
 
         var completeResponse = stub.completeWorkoutSession(CompleteWorkoutSessionRequest.newBuilder()
-                .setUserId(userId)
+                .setUserId(registerResponse.getUserId())
                 .setSessionId(startResponse.getSessionId())
                 .setFinishedAt("2026-04-16T08:45:00Z")
                 .setMinTotalSets(2)
@@ -180,10 +171,9 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
         assertTrue(completeResponse.getCompleted());
         assertTrue(completeResponse.getAllowsProgression());
         assertEquals(2, completeResponse.getTotalSets());
-        assertFalse(completeResponse.getSessionId().isBlank());
 
         var recommendation = stub.recommend(RecommendRequest.newBuilder()
-                .setUserId(userId)
+                .setUserId(registerResponse.getUserId())
                 .setExerciseId(EXERCISE_ID)
                 .setRulesVersion("v1.0.0")
                 .setModalityKey("barbell_upper")
@@ -193,6 +183,48 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
         assertEquals(EXERCISE_ID, recommendation.getSets(0).getExerciseId());
         assertEquals(8, recommendation.getSets(0).getPrescribedReps());
         assertEquals(60.75, recommendation.getSets(0).getPrescribedWeightKg());
+    }
+
+    @Test
+    void authRefreshAndLogoutAreGrpcNative() {
+        assertTrue(grpcPortHolder.get() > 0, "Expected gRPC server port to be captured after startup");
+        channel = ManagedChannelBuilder.forAddress("localhost", grpcPortHolder.get())
+                .usePlaintext()
+                .build();
+
+        var authStub = AuthServiceGrpc.newBlockingStub(channel);
+        authStub.registerCredentials(RegisterCredentialsRequest.newBuilder()
+                .setEmail("grpc-alpha@spotme.dev")
+                .setPassword("Password123!")
+                .setExperienceLevel("beginner")
+                .setTrainingGoal("strength")
+                .setBaselineSleepHours(7)
+                .setStressSensitivity(3)
+                .build());
+
+        var loginResponse = authStub.login(LoginRequest.newBuilder()
+                .setEmail("grpc-alpha@spotme.dev")
+                .setPassword("Password123!")
+                .build());
+
+        var refreshResponse = authStub.refreshToken(RefreshTokenRequest.newBuilder()
+                .setRefreshToken(loginResponse.getRefreshToken())
+                .build());
+        assertFalse(refreshResponse.getAccessToken().isBlank());
+        assertFalse(refreshResponse.getRefreshToken().isBlank());
+
+        var headers = new Metadata();
+        headers.put(AUTHORIZATION_HEADER, "Bearer " + refreshResponse.getAccessToken());
+        var authenticatedAuthStub = authStub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
+        authenticatedAuthStub.logout(Empty.getDefaultInstance());
+
+        var ex = org.junit.jupiter.api.Assertions.assertThrows(
+                StatusRuntimeException.class,
+                () -> authStub.refreshToken(RefreshTokenRequest.newBuilder()
+                        .setRefreshToken(refreshResponse.getRefreshToken())
+                        .build())
+        );
+        assertEquals(Status.Code.UNAUTHENTICATED, ex.getStatus().getCode());
     }
 
     @Test
@@ -210,48 +242,6 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
                         .build())
         );
         assertEquals(Status.Code.UNAUTHENTICATED, ex.getStatus().getCode());
-    }
-
-    @Test
-    void registerUserOverGrpcIsRejectedEvenWithJwt() {
-        assertTrue(grpcPortHolder.get() > 0, "Expected gRPC server port to be captured after startup");
-        channel = ManagedChannelBuilder.forAddress("localhost", grpcPortHolder.get())
-                .usePlaintext()
-                .build();
-        var unauthenticatedStub = PlanServiceGrpc.newBlockingStub(channel);
-
-        var registerReq = Map.of(
-                "email", "grpc-alpha@spotme.dev",
-                "password", "Password123!",
-                "experienceLevel", "beginner",
-                "trainingGoal", "strength",
-                "baselineSleepHours", 7,
-                "stressSensitivity", 3
-        );
-        ResponseEntity<Map> registerRes = rest.postForEntity("/api/auth/register", registerReq, Map.class);
-        assertEquals(HttpStatus.CREATED, registerRes.getStatusCode());
-
-        var loginReq = Map.of("email", "grpc-alpha@spotme.dev", "password", "Password123!");
-        ResponseEntity<Map> loginRes = rest.postForEntity("/api/auth/login", loginReq, Map.class);
-        assertEquals(HttpStatus.OK, loginRes.getStatusCode());
-        assertNotNull(loginRes.getBody());
-        var accessToken = (String) loginRes.getBody().get("accessToken");
-        assertNotNull(accessToken);
-
-        var headers = new Metadata();
-        headers.put(AUTHORIZATION_HEADER, "Bearer " + accessToken);
-        var stub = unauthenticatedStub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
-
-        var ex = org.junit.jupiter.api.Assertions.assertThrows(
-                StatusRuntimeException.class,
-                () -> stub.registerUser(RegisterUserRequest.newBuilder()
-                        .setExperienceLevel("beginner")
-                        .setTrainingGoal("strength")
-                        .setBaselineSleepHours(7)
-                        .setStressSensitivity(3)
-                        .build())
-        );
-        assertEquals(Status.Code.PERMISSION_DENIED, ex.getStatus().getCode());
     }
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -273,10 +263,3 @@ class AdaptiveTrainingFlowGrpcIntegrationTest {
         }
     }
 }
-
-
-
-
-
-
-

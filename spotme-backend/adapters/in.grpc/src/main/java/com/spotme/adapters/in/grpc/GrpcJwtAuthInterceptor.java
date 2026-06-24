@@ -8,14 +8,8 @@ import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import io.grpc.Status;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import net.devh.boot.grpc.server.interceptor.GrpcGlobalServerInterceptor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-
-import javax.crypto.SecretKey;
 import java.lang.reflect.Method;
 
 /**
@@ -30,11 +24,10 @@ public class GrpcJwtAuthInterceptor implements ServerInterceptor {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private final SecretKey signingKey;
+    private final JwtTokenService jwtTokenService;
 
-    public GrpcJwtAuthInterceptor(@Value("${spotme.jwt.secret}") String secret) {
-        byte[] keyBytes = Decoders.BASE64.decode(secret);
-        this.signingKey = Keys.hmacShaKeyFor(keyBytes);
+    public GrpcJwtAuthInterceptor(JwtTokenService jwtTokenService) {
+        this.jwtTokenService = jwtTokenService;
     }
 
     @Override
@@ -58,12 +51,7 @@ public class GrpcJwtAuthInterceptor implements ServerInterceptor {
         String token = header.substring(BEARER_PREFIX.length());
         String authenticatedUserId;
         try {
-            authenticatedUserId = Jwts.parser()
-                    .verifyWith(signingKey)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload()
-                    .getSubject();
+            authenticatedUserId = jwtTokenService.extractUserId(token);
         } catch (RuntimeException ex) {
             call.close(Status.UNAUTHENTICATED.withDescription("JWT is invalid or has expired"), new Metadata());
             return new ServerCall.Listener<>() {
@@ -92,6 +80,11 @@ public class GrpcJwtAuthInterceptor implements ServerInterceptor {
             return false;
         }
         if (fullMethodName.startsWith("grpc.reflection.v1alpha.ServerReflection/")) {
+            return false;
+        }
+        if (fullMethodName.endsWith("/RegisterCredentials")
+                || fullMethodName.endsWith("/Login")
+                || fullMethodName.endsWith("/RefreshToken")) {
             return false;
         }
         return true;

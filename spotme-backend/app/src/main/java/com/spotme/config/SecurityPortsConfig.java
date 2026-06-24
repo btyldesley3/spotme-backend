@@ -1,16 +1,12 @@
-package com.spotme.adapters.in.rest.security;
+package com.spotme.config;
 
 import com.spotme.domain.port.PasswordHashPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
-/**
- * Beans that live in the REST adapter module related to security infrastructure.
- * The SecurityFilterChain itself is declared in the app/ module's SecurityConfig.
- */
 @Configuration
-public class RestSecurityBeans {
+public class SecurityPortsConfig {
 
     @Bean
     public PasswordHashPort passwordHashPort() {
@@ -28,5 +24,4 @@ public class RestSecurityBeans {
         };
     }
 }
-
 

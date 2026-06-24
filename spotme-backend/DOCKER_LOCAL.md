@@ -1,149 +1,91 @@
 # SpotMe Local Development with Docker
 
-## Quick Start
+This guide runs SpotMe locally with Docker Compose using the gRPC-native API.
 
-### Prerequisites
-- Docker & Docker Compose installed
-- Git cloned at `spotme-backend/`
+## 1) Prerequisites
 
-### 1. First-time setup
+- Docker Desktop
+- Repo cloned at `spotme-backend/`
 
-```bash
-cd spotme-backend
+## 2) First-time setup
 
-# Copy environment file
-cp .env.example .env
-
-# Build and start containers
+```powershell
+Copy-Item .env.example .env
 docker compose up --build
 ```
 
-This will:
-- Build the `spotme-api` image from `Dockerfile`
-- Start PostgreSQL on `localhost:5432`
-- Start the app on REST `localhost:8080` + gRPC `localhost:9090`
-- Wait for DB health check before app starts
+What starts:
 
-**First build takes ~3-5 minutes** (Maven compiles everything). Subsequent builds are faster.
+- `postgres` on `localhost:5432`
+- `spotme-api` gRPC server on `localhost:9090`
 
----
+## 3) Daily commands
 
-## Testing the API
+Start:
 
-### Option 1: cURL (Terminal)
-
-**Start a workout session:**
-```bash
-curl -X POST "http://localhost:8080/api/v1/workout-sessions/start" \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"11111111-1111-1111-1111-111111111111","startedAt":"2026-04-14T18:00:00Z"}'
+```powershell
+docker compose up
 ```
 
-Copy the returned `sessionId` for the next step.
+Stop:
 
-**Log a set:**
-```bash
-curl -X POST "http://localhost:8080/api/v1/workout-sessions/{sessionId}/sets" \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"11111111-1111-1111-1111-111111111111","exerciseId":"22222222-2222-2222-2222-222222222222","setNumber":1,"reps":8,"weightKg":60.0,"rpe":8.0,"note":"top set"}'
-```
-
-**Complete session + report recovery:**
-```bash
-curl -X POST "http://localhost:8080/api/v1/workout-sessions/{sessionId}/complete" \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"11111111-1111-1111-1111-111111111111","finishedAt":"2026-04-14T18:45:00Z","minTotalSets":1,"minDistinctExercises":1,"minSetsPerExercise":1,"requireRecoveryFeedbackForProgression":true,"doms":3,"sleepQuality":7}'
-```
-
-**Get recommendation:**
-```bash
-curl -X POST "http://localhost:8080/api/v1/recommendations" \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"11111111-1111-1111-1111-111111111111","exerciseId":"22222222-2222-2222-2222-222222222222","rulesVersion":"v1.0.0","modalityKey":"barbell_upper"}'
-```
-
-### Option 2: Postman
-
-1. Open Postman
-2. Create new requests pointing to `http://localhost:8080/api/v1/...`
-3. Use the cURL examples above as request bodies
-
----
-
-## Debugging
-
-### View container logs
-```bash
-# All containers
-docker compose logs -f
-
-# Just the API
-docker compose logs -f spotme-api
-
-# Just Postgres
-docker compose logs -f postgres
-```
-
-### Connect to Postgres directly
-```bash
-docker exec -it spotme-postgres psql -U spotme -d spotme
-```
-
-### Stop everything
-```bash
+```powershell
 docker compose down
 ```
 
-### Stop + remove data (clean slate)
-```bash
+Clean slate (remove volumes):
+
+```powershell
 docker compose down -v
 ```
 
----
+Logs:
 
-## Switching to Amazon RDS (Future)
+```powershell
+docker compose logs -f
+docker compose logs -f spotme-api
+docker compose logs -f postgres
+```
 
-When you're ready to use Amazon RDS instead of local Postgres:
+## 4) Verify gRPC service
 
-1. Set environment variables in your deploy platform (e.g., ECS, Lambda, etc.):
-   ```
-   SPRING_DATASOURCE_URL=jdbc:postgresql://<your-rds-endpoint>:5432/spotme
-   SPRING_DATASOURCE_USERNAME=<rds_username>
-   SPRING_DATASOURCE_PASSWORD=<rds_password>
-   ```
+```powershell
+grpcurl -plaintext localhost:9090 list
+```
 
-2. Build the image with Docker (same Dockerfile):
-   ```bash
-   docker build -t spotme-api:latest .
-   docker push <your-ecr-repo>/spotme-api:latest
-   ```
+Expected service list includes:
 
-3. Deploy to AWS (ECS, EKS, etc.) — no code changes needed!
+- `com.spotme.proto.plan.v1.AuthService`
+- `com.spotme.proto.plan.v1.PlanService`
 
----
+## 5) Common issues
 
-## Common Issues
+### `spotme-api` fails to boot
 
-**Issue:** API won't start / connection refused
+- Check DB health and startup order in logs
+- Verify `.env` values are valid
+- Rebuild from scratch:
 
-- **Check Postgres is healthy:** `docker compose logs postgres`
-- **Check API logs:** `docker compose logs spotme-api`
-- **Rebuild:** `docker compose up --build --force-recreate`
+```powershell
+docker compose up --build --force-recreate
+```
 
-**Issue:** Port 8080/9090 already in use
+### Port conflict on `5432` or `9090`
 
-- Edit `docker-compose.yaml` and change `ports` to different host ports, e.g., `"8081:8080"`
+Edit `docker-compose.yaml` host-side mapping to free ports, then restart compose.
 
-**Issue:** Build takes forever
+### JWT startup failure
 
-- First build is slow (Maven downloading deps). **Subsequent builds are cached.**
-- If you want to skip tests during build, edit `Dockerfile` and change `DskipTests` to `true`.
+Outside `test` profile, `spotme.jwt.secret` must be set and decode to at least 32 bytes.
 
----
+## 6) Postgres shell access
 
-## Next Steps
+```powershell
+docker exec -it spotme-postgres psql -U spotme -d spotme
+```
 
-- [ ] Add database migrations via Flyway (currently disabled for MVP)
-- [ ] Add Redis caching (commented out in compose)
-- [ ] Production Dockerfile optimization (multi-stage is already optimized)
+## 7) Notes
 
+- Flyway behavior is controlled by `SPRING_FLYWAY_ENABLED`
+- Redis-related modules exist but are not required for MVP gRPC flow
+- For interactive API calls, use Postman gRPC or `grpcurl`
